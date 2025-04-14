@@ -1,5 +1,5 @@
 {
-  "siteA": {
+  "site1": {
     "scrubPercent": 20,
     "normalPixelUrl": "https://example.com/pixelA",
     "scrubPixelUrl": "https://example.com/scrubA",
