@@ -28,7 +28,19 @@ export default {
     }
 
     const { pixelType, pixelUrl } = routePixel(siteConfig);
-    const fired = await firePixel(pixelUrl, data);
+    let fired = false;
+
+    if (pixelType === 'normal') {
+      // Fire normal pixel
+      fired = await firePixel(siteConfig.normalPixelUrl, data);
+      // Fire postbackUrl if present (do not block on result)
+      if (siteConfig.postbackUrl) {
+        firePixel(siteConfig.postbackUrl, data);
+      }
+    } else if (pixelType === 'scrub') {
+      // Fire only scrub pixel
+      fired = await firePixel(siteConfig.scrubPixelUrl, data);
+    }
 
     // Optionally log the conversion
     logConversion(data, pixelType);
