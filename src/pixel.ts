@@ -17,3 +17,24 @@ export async function firePixel(url: string, data: ConversionData): Promise<bool
     return false;
   }
 }
+
+/**
+ * Fires a Sticky.io "New Order" API request.
+ * Returns the API response as JSON, or null on error.
+ */
+export async function fireStickyOrder(orderData: any, username: string, password: string): Promise<any | null> {
+  try {
+    const resp = await fetch('https://techcommerceunlimited.sticky.io/api/v1/new_order', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic ' + btoa(username + ':' + password)
+      },
+      body: JSON.stringify(orderData),
+    });
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch (err) {
+    return null;
+  }
+}
