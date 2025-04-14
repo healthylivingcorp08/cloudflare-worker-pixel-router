@@ -8,5 +8,5 @@ command = "npm run build"
 
 [[kv_namespaces]]
 binding = "PIXEL_CONFIG"
-id = ""
+id = "d6db5d0cfcb14e98b2d7f1bd5567f74f"
 preview_id = ""
