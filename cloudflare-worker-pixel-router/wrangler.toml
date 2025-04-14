@@ -1,0 +1,12 @@
+name = "cloudflare-worker-pixel-router"
+main = "src/handler.ts"
+compatibility_date = "2024-04-01"
+type = "module"
+
+[build]
+command = "npm run build"
+
+[[kv_namespaces]]
+binding = "PIXEL_CONFIG"
+id = ""
+preview_id = ""

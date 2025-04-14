@@ -1,0 +1,14 @@
+{
+  "siteA": {
+    "scrubPercent": 20,
+    "normalPixelUrl": "https://example.com/pixelA",
+    "scrubPixelUrl": "https://example.com/scrubA",
+    "postbackUrl": "https://example.com/postbackA"
+  },
+  "siteB": {
+    "scrubPercent": 30,
+    "normalPixelUrl": "https://example.org/pixelB",
+    "scrubPixelUrl": "https://example.org/scrubB",
+    "postbackUrl": "https://example.org/postbackB"
+  }
+}
