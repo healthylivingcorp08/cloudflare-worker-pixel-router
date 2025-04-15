@@ -349,104 +349,41 @@ const loginHtml = `<!DOCTYPE html>
 </body>
 </html>`;
 
-// Admin UI with KV editing functionality
+// Admin UI with KV editing functionality (Single File)
 const adminHtml = `<!DOCTYPE html>
 <html>
 <head>
     <title>Admin Dashboard</title>
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            margin: 0;
-            padding: 0;
-            background: #f8fafc;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-        }
-        .title {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: #1e293b;
-        }
-        .logout-btn {
-            padding: 0.5rem 1rem;
-            background: #ef4444;
-            color: white;
-            border: none;
-            border-radius: 0.25rem;
-            cursor: pointer;
-        }
-        .kv-table {
-            width: 100%;
-            border-collapse: collapse;
-            background: white;
-            border-radius: 0.5rem;
-            overflow: hidden;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        .kv-table th, .kv-table td {
-            padding: 1rem;
-            text-align: left;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        .kv-table th {
-            background: #f1f5f9;
-            font-weight: 500;
-            color: #334155;
-        }
-        .action-btn {
-            padding: 0.25rem 0.5rem;
-            margin-right: 0.5rem;
-            border-radius: 0.25rem;
-            cursor: pointer;
-        }
-        .edit-btn {
-            background: #3b82f6;
-            color: white;
-            border: none;
-        }
-        .delete-btn {
-            background: #ef4444;
-            color: white;
-            border: none;
-        }
-        .filter-container {
-            margin-bottom: 1rem;
-            display: flex;
-            gap: 1rem;
-            align-items: center;
-            flex-wrap: wrap; /* Allow wrapping on smaller screens */
-        }
-        .filter-input {
-            padding: 0.5rem;
-            border: 1px solid #e2e8f0;
-            border-radius: 0.25rem;
-            flex-grow: 1; /* Take available space */
-        }
-        .bulk-edit-btn {
-             background: #f59e0b; /* Amber color */
-             color: white;
-             border: none;
-        }
+        body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; background: #f8fafc; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        .title { font-size: 1.5rem; font-weight: 600; color: #1e293b; }
+        .logout-btn { padding: 0.5rem 1rem; background: #ef4444; color: white; border: none; border-radius: 0.25rem; cursor: pointer; }
+        .kv-table { width: 100%; border-collapse: collapse; background: white; border-radius: 0.5rem; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .kv-table th, .kv-table td { padding: 1rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        .kv-table th { background: #f1f5f9; font-weight: 500; color: #334155; }
+        .action-btn { padding: 0.25rem 0.5rem; margin-right: 0.5rem; border-radius: 0.25rem; cursor: pointer; border: none; color: white; }
+        .edit-btn { background: #3b82f6; }
+        .delete-btn { background: #ef4444; }
+        .filter-container { margin-bottom: 1rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+        .filter-input { padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.25rem; flex-grow: 1; }
+        .bulk-edit-btn { background: #f59e0b; }
+        .status-message { margin-top: 1rem; padding: 0.75rem; border-radius: 0.25rem; }
+        .status-error { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+        .status-success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+        .status-loading { background: #e0f2fe; color: #0c4a6e; border: 1px solid #bae6fd; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1 class="title">Admin Dashboard</h1>
-            <button class="logout-btn" onclick="localStorage.removeItem('adminToken'); window.location.href='/admin/login';">Logout</button>
+            <button class="logout-btn" onclick="logout()">Logout</button>
         </div>
 
         <h2>KV Store Editor</h2>
+        <div id="status-area"></div>
         <div class="filter-container">
             <label for="site-select">Site:</label>
             <select id="site-select" class="filter-input" style="flex-grow: 0; min-width: 150px;"></select>
@@ -462,12 +399,241 @@ const adminHtml = `<!DOCTYPE html>
                 </tr>
             </thead>
             <tbody id="kv-entries">
-                <!-- KV entries will be loaded here via JavaScript -->
+                <tr><td colspan="3">Loading...</td></tr>
             </tbody>
         </table>
-
-        <script src="/admin/ui/admin.js"></script>
     </div>
+
+    <script>
+        let allKVEntries = [];
+        let currentSiteId = null;
+
+        // --- DOM Elements ---
+        const siteSelect = document.getElementById('site-select');
+        const filterInput = document.getElementById('kv-filter');
+        const bulkEditBtn = document.getElementById('bulk-edit-btn');
+        const tableBody = document.getElementById('kv-entries');
+        const statusArea = document.getElementById('status-area');
+
+        // --- Utility Functions ---
+        function getAuthToken() {
+            return localStorage.getItem('adminToken');
+        }
+
+        function logout() {
+            localStorage.removeItem('adminToken');
+            window.location.href = '/admin/login';
+        }
+
+        function showStatus(message, type = 'loading') {
+            statusArea.innerHTML = \`<div class="status-message status-\${type}">\${message}</div>\`;
+        }
+
+        function clearStatus() {
+            statusArea.innerHTML = '';
+        }
+
+        // --- API Fetch Wrapper ---
+        async function authFetch(url, options = {}) {
+            const token = getAuthToken();
+            if (!token) {
+                logout(); // Redirect if no token
+                return Promise.reject('No auth token found');
+            }
+
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': \`Bearer \${token}\`,
+                ...(options.headers || {})
+            };
+
+            try {
+                const response = await fetch(url, { ...options, headers });
+
+                if (response.status === 401) {
+                    logout(); // Token expired or invalid
+                    return Promise.reject('Unauthorized');
+                }
+
+                if (!response.ok) {
+                    let errorText = \`HTTP error! status: \${response.status}\`;
+                    try {
+                        const errorData = await response.json();
+                        errorText = errorData.error || errorText;
+                    } catch (e) {
+                        // Ignore if response is not JSON
+                    }
+                    throw new Error(errorText);
+                }
+
+                // Handle cases where response might be empty (e.g., DELETE)
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.indexOf("application/json") !== -1) {
+                    const data = await response.json();
+                    if (!data.success) {
+                        throw new Error(data.error || 'API request failed');
+                    }
+                    return data.data; // Return only the data part
+                } else {
+                    return { success: true }; // Assume success for non-JSON responses if status is OK
+                }
+            } catch (error) {
+                console.error('Fetch error:', error);
+                showStatus(\`API Error: \${error.message}\`, 'error');
+                throw error; // Re-throw error for further handling if needed
+            }
+        }
+
+        // --- UI Rendering ---
+        function renderTable(data) {
+            tableBody.innerHTML = ''; // Clear existing rows
+
+            if (!data || data.length === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = '<td colspan="3">No entries found for this site.</td>';
+                tableBody.appendChild(row);
+                return;
+            }
+
+            data.forEach(entry => {
+                const row = document.createElement('tr');
+                // Ensure value is displayed correctly, even if null/undefined or object
+                let displayValue = 'N/A';
+                if (entry.value !== null && entry.value !== undefined) {
+                    displayValue = typeof entry.value === 'object' ? JSON.stringify(entry.value) : String(entry.value);
+                }
+                // Escape HTML in key and value to prevent XSS
+                const safeKey = entry.name.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                const safeValue = displayValue.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+                row.innerHTML = \`
+                    <td>\${safeKey}</td>
+                    <td>\${safeValue}</td>
+                    <td>
+                        <button class="action-btn edit-btn" onclick="editEntry('\${safeKey}', '\${safeValue}')">Edit</button>
+                        <button class="action-btn delete-btn" onclick="deleteEntry('\${safeKey}')">Delete</button>
+                    </td>
+                \`;
+                tableBody.appendChild(row);
+            });
+        }
+
+        // --- Data Loading & Filtering ---
+        function filterTable() {
+            const filterValue = filterInput.value.toLowerCase();
+            const filteredData = allKVEntries.filter(entry =>
+                entry.name.toLowerCase().includes(filterValue) ||
+                (entry.value && String(entry.value).toLowerCase().includes(filterValue))
+            );
+            renderTable(filteredData);
+        }
+
+        async function loadKVEntries(siteId) {
+            if (!siteId) {
+                tableBody.innerHTML = '<tr><td colspan="3">Please select a site.</td></tr>';
+                allKVEntries = [];
+                return;
+            }
+            currentSiteId = siteId;
+            showStatus(\`Loading KV entries for site: \${siteId}...\`);
+            try {
+                const data = await authFetch(\`/admin/api/kv/list?siteId=\${siteId}\`);
+                allKVEntries = data || [];
+                renderTable(allKVEntries);
+                clearStatus();
+            } catch (error) {
+                // Error status is shown in authFetch
+                tableBody.innerHTML = \`<tr><td colspan="3">Error loading data for site \${siteId}. Check console.</td></tr>\`;
+                allKVEntries = [];
+            }
+        }
+
+        async function initializeSiteSelector() {
+            showStatus('Loading available sites...');
+            try {
+                const sites = await authFetch('/admin/api/sites');
+                siteSelect.innerHTML = ''; // Clear previous options
+
+                if (!sites || sites.length === 0) {
+                     siteSelect.innerHTML = '<option value="">No sites found</option>';
+                     loadKVEntries(null); // Show message
+                     clearStatus();
+                     return;
+                }
+
+                // Populate dropdown
+                sites.forEach(siteId => {
+                    const option = document.createElement('option');
+                    option.value = siteId;
+                    option.textContent = siteId;
+                    siteSelect.appendChild(option);
+                });
+
+                // Set default selection (e.g., 'siteA' if it exists, otherwise the first site)
+                const defaultSite = sites.includes('siteA') ? 'siteA' : sites[0];
+                siteSelect.value = defaultSite;
+
+                // Load initial data for the default site
+                await loadKVEntries(defaultSite);
+                clearStatus();
+
+            } catch (error) {
+                // Error status shown in authFetch
+                siteSelect.innerHTML = '<option value="">Error loading sites</option>';
+                loadKVEntries(null); // Show message
+            }
+        }
+
+        // --- CRUD Operations ---
+        async function editEntry(key, currentValue) {
+            const newValue = prompt(\`Enter new value for \${key}:\`, currentValue);
+            if (newValue !== null) { // Check if user cancelled prompt
+                showStatus(\`Updating key: \${key}...\`);
+                try {
+                    await authFetch(\`/admin/api/kv/\${key}\`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ value: newValue })
+                    });
+                    showStatus(\`Successfully updated key: \${key}\`, 'success');
+                    await loadKVEntries(currentSiteId); // Re-fetch data
+                } catch (error) {
+                    // Error status shown in authFetch
+                }
+            }
+        }
+
+        async function deleteEntry(key) {
+            if (confirm(\`Are you sure you want to delete key: \${key}?\`)) {
+                showStatus(\`Deleting key: \${key}...\`);
+                try {
+                    await authFetch(\`/admin/api/kv/\${key}\`, {
+                        method: 'DELETE'
+                    });
+                    showStatus(\`Successfully deleted key: \${key}\`, 'success');
+                    await loadKVEntries(currentSiteId); // Re-fetch data
+                } catch (error) {
+                    // Error status shown in authFetch
+                }
+            }
+        }
+
+        // --- Event Listeners & Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!getAuthToken()) {
+                logout(); // Redirect to login if no token
+            } else {
+                // Add event listeners
+                siteSelect.addEventListener('change', (event) => {
+                    loadKVEntries(event.target.value);
+                });
+                filterInput.addEventListener('input', filterTable);
+                bulkEditBtn.addEventListener('click', () => showStatus('Bulk Edit functionality not yet implemented.', 'error'));
+
+                // Initialize
+                initializeSiteSelector();
+            }
+        });
+    </script>
 </body>
 </html>`;
 
@@ -515,14 +681,6 @@ async function handleAuth(request: Request, env: Env): Promise<Response> {
  */
 async function handleAdminUI(request: Request): Promise<Response> {
     const url = new URL(request.url);
-
-    // Serve admin.js
-    if (url.pathname === '/admin/ui/admin.js') {
-        console.log('[Admin UI] Serving admin.js');
-        return new Response(adminJs, {
-            headers: { 'Content-Type': 'application/javascript' }
-        });
-    }
 
     // Serve login page
     if (url.pathname === '/admin/login' || url.pathname === '/admin/login/') {
