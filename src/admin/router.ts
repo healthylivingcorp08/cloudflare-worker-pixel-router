@@ -206,6 +206,7 @@ const adminHtml = `<!DOCTYPE html>
             display: flex;
             gap: 1rem;
             align-items: center;
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
         }
         .filter-input {
             padding: 0.5rem;
@@ -226,8 +227,14 @@ const adminHtml = `<!DOCTYPE html>
             <h1 class="title">Admin Dashboard</h1>
             <button class="logout-btn" onclick="localStorage.removeItem('adminToken'); window.location.href='/admin/login';">Logout</button>
         </div>
-        
+
         <h2>KV Store Editor</h2>
+        <div class="filter-container">
+            <label for="site-select">Site:</label>
+            <select id="site-select" class="filter-input" style="flex-grow: 0; min-width: 150px;"></select>
+            <input type="text" id="kv-filter" placeholder="Filter by key or value..." class="filter-input">
+            <button id="bulk-edit-btn" class="action-btn bulk-edit-btn">Bulk Edit</button>
+        </div>
         <table class="kv-table">
             <thead>
                 <tr>
@@ -331,8 +338,14 @@ async function handleAPI(request: AuthenticatedRequest, env: Env): Promise<Respo
         return handleAuth(request, env);
     }
 
-    // Handle KV operations
+    // Handle KV operations / Site Config operations
     try {
+        // Site listing
+        if (path === 'sites' && request.method === 'GET') {
+             return handleListSites(request, env);
+        }
+
+        // KV Listing
         if (path === 'kv/list') {
             return handleListKeys(request, env);
         }

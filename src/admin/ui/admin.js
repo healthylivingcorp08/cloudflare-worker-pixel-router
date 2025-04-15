@@ -86,38 +86,89 @@ function filterTable() {
     renderTable(filteredData);
 }
 
-// Load KV entries and setup filter
-async function loadKVEntriesAndSetup() {
-    try {
-        // Add siteId=site1 to the API call for testing
-        const response = await authFetch('/admin/api/kv/list?siteId=site1'); // Fetch the wrapped response for site1
-        allKVEntries = response.data || []; // Extract the data array, default to empty array if missing
-        renderTable(allKVEntries); // Initial render
+// Load KV entries for a specific site and setup filters/listeners
+async function loadKVEntriesAndSetup(siteId) {
+    if (!siteId) {
+        console.error("No siteId provided to loadKVEntriesAndSetup");
+        // Optionally clear the table or show a message
+        const tableBody = document.getElementById('kv-entries');
+        if (tableBody) {
+            tableBody.innerHTML = '<tr><td colspan="3">Please select a site.</td></tr>';
+        }
+        allKVEntries = []; // Clear stored data
+        return;
+    }
 
-        // Setup filter input if not already present
-        const filterContainer = document.querySelector('.filter-container');
-        if (filterContainer) { // Check if elements exist before adding listener
-             const filterInput = document.getElementById('kv-filter');
-             if (filterInput) {
-                filterInput.addEventListener('input', filterTable);
-             }
-             const bulkEditBtn = document.getElementById('bulk-edit-btn');
-             if (bulkEditBtn) {
-                bulkEditBtn.addEventListener('click', () => alert('Bulk Edit functionality not yet implemented.'));
-             }
+    console.log(`Loading KV entries for site: ${siteId}`);
+    try {
+        const response = await authFetch(`/admin/api/kv/list?siteId=${siteId}`); // Fetch for the specified site
+        allKVEntries = response.data || []; // Extract the data array
+        renderTable(allKVEntries); // Render the table with new data
+
+        // Ensure filter/bulk listeners are attached (only needs to happen once, really)
+        // Consider moving listener setup outside this function if it causes issues
+        const filterInput = document.getElementById('kv-filter');
+        if (filterInput && !filterInput.dataset.listenerAttached) {
+            filterInput.addEventListener('input', filterTable);
+            filterInput.dataset.listenerAttached = 'true'; // Mark as attached
+        }
+        const bulkEditBtn = document.getElementById('bulk-edit-btn');
+        if (bulkEditBtn && !bulkEditBtn.dataset.listenerAttached) {
+            bulkEditBtn.addEventListener('click', () => alert('Bulk Edit functionality not yet implemented.'));
+            bulkEditBtn.dataset.listenerAttached = 'true'; // Mark as attached
         }
 
     } catch (error) {
-        // Error handling is done within authFetch, but log here if needed
-        console.error('Error loading KV entries:', error);
-        // Optionally display an error message in the UI
+        console.error(`Error loading KV entries for site ${siteId}:`, error);
         const tableBody = document.getElementById('kv-entries');
         if (tableBody) {
-            tableBody.innerHTML = '<tr><td colspan="3">Error loading data. Please check console or try again.</td></tr>';
+            tableBody.innerHTML = `<tr><td colspan="3">Error loading data for site ${siteId}.</td></tr>`;
         }
+        allKVEntries = []; // Clear data on error
     }
 }
 
+// Populate site dropdown and load initial data
+async function initializeSiteSelector() {
+    const siteSelect = document.getElementById('site-select');
+    if (!siteSelect) return; // Exit if dropdown doesn't exist
+
+    try {
+        const sitesResponse = await authFetch('/admin/api/sites');
+        const sites = sitesResponse.data || [];
+
+        if (sites.length === 0) {
+             siteSelect.innerHTML = '<option value="">No sites found</option>';
+             loadKVEntriesAndSetup(null); // Load with null to show message
+             return;
+        }
+
+        // Populate dropdown
+        sites.forEach(siteId => {
+            const option = document.createElement('option');
+            option.value = siteId;
+            option.textContent = siteId;
+            siteSelect.appendChild(option);
+        });
+
+        // Set default selection (e.g., 'siteA' if it exists, otherwise the first site)
+        const defaultSite = sites.includes('siteA') ? 'siteA' : sites[0];
+        siteSelect.value = defaultSite;
+
+        // Add event listener to load data on change
+        siteSelect.addEventListener('change', (event) => {
+            loadKVEntriesAndSetup(event.target.value);
+        });
+
+        // Load initial data for the default site
+        loadKVEntriesAndSetup(defaultSite);
+
+    } catch (error) {
+        console.error("Error initializing site selector:", error);
+        siteSelect.innerHTML = '<option value="">Error loading sites</option>';
+        loadKVEntriesAndSetup(null); // Load with null to show message
+    }
+}
 
 // Edit key - Pass current value to pre-fill prompt
 async function editKey(key, currentValue) {
@@ -158,17 +209,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!getAuthToken()) {
         window.location.href = '/admin/login';
     } else {
-        // Add filter/bulk elements dynamically before loading data
-        const table = document.querySelector('.kv-table');
-        if (table && !document.querySelector('.filter-container')) { // Prevent adding multiple times
-            const controlsDiv = document.createElement('div');
-            controlsDiv.className = 'filter-container'; // Use this class for styling
-            controlsDiv.innerHTML = `
-                <input type="text" id="kv-filter" placeholder="Filter by key or value..." class="filter-input">
-                <button id="bulk-edit-btn" class="action-btn bulk-edit-btn">Bulk Edit</button>
-            `;
-            table.parentNode.insertBefore(controlsDiv, table);
-        }
-        loadKVEntriesAndSetup(); // Load data and setup listeners
+        // HTML elements (dropdown, filter, button) are now part of the static HTML template
+        // Initialize the site selector, which will then load initial KV data
+        initializeSiteSelector();
     }
 });
