@@ -1,18 +1,44 @@
 {
   "name": "cloudflare-worker-pixel-router",
   "version": "1.0.0",
-  "description": "Cloudflare Worker for routing conversion pixels based on scrub percentage.",
-  "main": "src/handler.ts",
+  "description": "Pixel routing and API integration system with admin UI",
+  "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
-    "deploy": "wrangler publish",
-    "dev": "wrangler dev"
+    "dev": "wrangler dev src/index.ts",
+    "deploy": "bash scripts/deploy.sh",
+    "deploy:msg": "bash scripts/deploy.sh",
+    "init-config": "node scripts/init-config.js",
+    "update-kv": "ts-node --transpile-only scripts/update-kv.ts",
+    "test": "jest",
+    "build": "wrangler build",
+    "typecheck": "tsc --noEmit"
   },
-  "author": "",
-  "license": "MIT",
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.0.0"
+  },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250414.0",
+    "@types/jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "ts-node": "^10.0.0",
     "typescript": "^5.0.0",
-    "wrangler": "^3.0.0"
-  }
+    "wrangler": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/cloudflare-worker-pixel-router.git"
+  },
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "pixel",
+    "routing",
+    "api"
+  ],
+  "author": "",
+  "license": "ISC"
 }

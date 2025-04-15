@@ -1,24 +1,71 @@
-/**
- * Script to update Cloudflare KV (PIXEL_CONFIG) with site configs from config/sites.json.
- * Usage: npx ts-node scripts/update-kv.ts
- * Requires: wrangler CLI authenticated and PIXEL_CONFIG namespace bound in wrangler.toml.
- */
+// Script to update KV store values using wrangler
+// Usage: npm run update-kv -- --site=siteA --key=checkout_offer_id --value=123
 
-import fs from 'fs';
-import path from 'path';
 import { execSync } from 'child_process';
 
-const configPath = path.resolve(__dirname, '../config/sites.json');
-const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-
-const namespace = 'PIXEL_CONFIG';
-
-for (const [site, siteConfig] of Object.entries(config)) {
-  const value = JSON.stringify(siteConfig);
-  // Use wrangler kv:key put to update the KV store
-  const cmd = `npx wrangler kv:key put --binding=${namespace} "${site}" '${value}'`;
-  console.log(`Updating KV for site "${site}"...`);
-  execSync(cmd, { stdio: 'inherit' });
+interface KVUpdateOptions {
+  site: string;
+  key: string;
+  value: string;
 }
 
-console.log('All site configs updated in Cloudflare KV.');
+function parseArgs(): KVUpdateOptions {
+  const args = process.argv.slice(2);
+  const options: Partial<KVUpdateOptions> = {};
+
+  for (const arg of args) {
+    const [key, value] = arg.replace('--', '').split('=');
+    if (key && value) {
+      options[key as keyof KVUpdateOptions] = value;
+    }
+  }
+
+  if (!options.site || !options.key || !options.value) {
+    console.error('Missing required arguments!');
+    console.error('Usage: npm run update-kv -- --site=siteA --key=checkout_offer_id --value=123');
+    process.exit(1);
+  }
+
+  return options as KVUpdateOptions;
+}
+
+function updateKV({ site, key, value }: KVUpdateOptions): void {
+  try {
+    // The full key in KV will be prefixed with the site ID
+    const kvKey = `${site}_${key}`;
+    
+    // Use wrangler to put the value in KV
+    const command = `wrangler kv:key put --binding=PIXEL_CONFIG "${kvKey}" "${value}"`;
+    
+    console.log(`Updating KV store...`);
+    console.log(`Key: ${kvKey}`);
+    console.log(`Value: ${value}`);
+    
+    execSync(command, { stdio: 'inherit' });
+    
+    console.log('\nKV store updated successfully!');
+    
+  } catch (error) {
+    console.error('\nFailed to update KV store:', error);
+    process.exit(1);
+  }
+}
+
+// Run the script
+const options = parseArgs();
+updateKV(options);
+
+/* Example KV keys that need to be set for siteA:
+siteA_presell_offer_id
+siteA_landing_offer_id
+siteA_checkout_offer_id
+siteA_checkout_campaign_id
+siteA_checkout_product_id
+siteA_upsell1_offer_id
+siteA_upsell1_campaign_id
+siteA_upsell1_product_id
+siteA_upsell2_offer_id
+siteA_upsell2_campaign_id
+siteA_upsell2_product_id
+stickyio_api_endpoint
+*/

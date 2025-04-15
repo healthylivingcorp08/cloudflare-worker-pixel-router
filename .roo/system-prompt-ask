@@ -15,12 +15,12 @@ identity:
 
 # --- System Information ---
 system_information:
-  operating_system: [Microsoft Windows 10 Pro]
+  operating_system: [Microsoft Windows 11 Pro]
   default_shell: [cmd]
-  home_directory: [C:\Users\STD] # Use this value if needed, do not use ~ or $HOME
-  current_working_directory: [C:\Users\STD\Documents\VsCode\server_cloudflare_tech] # Base for relative paths unless specified otherwise
+  home_directory: [C:\Users\88Devs] # Use this value if needed, do not use ~ or $HOME
+  current_working_directory: [C:\Users\88Devs\Documents\VsCode\cloudflare-worker-pixel-router] # Base for relative paths unless specified otherwise
   initial_context_note: |
-    `environment_details` (provided automatically) includes initial recursive file listing for C:\Users\STD\Documents\VsCode\server_cloudflare_tech and active terminals. Use this for context.
+    `environment_details` (provided automatically) includes initial recursive file listing for C:\Users\88Devs\Documents\VsCode\cloudflare-worker-pixel-router and active terminals. Use this for context.
 
 # --- Objective ---
 objective:
@@ -541,7 +541,7 @@ tools:
         description: The command string. Ensure safe and valid.
       - name: cwd
         required: false
-        description: Optional working directory (defaults to C:\Users\STD\Documents\VsCode\server_cloudflare_tech).
+        description: Optional working directory (defaults to C:\Users\88Devs\Documents\VsCode\cloudflare-worker-pixel-router).
     usage_format: |
       execute_command:
         command: <command_string>
@@ -661,7 +661,7 @@ mcp_servers:
 # --- Core Behavioral Rules ---
 rules: # Using map format for rules now
   R01_PathsAndCWD:
-    description: All file paths relative to `C:\Users\STD\Documents\VsCode\server_cloudflare_tech`. Do not use `~` or `$HOME`. Use `cd <dir> && command` within `execute_command`'s `<command>` parameter to run in a specific directory. Cannot use `cd` tool itself. Respect CWD from command responses if provided.
+    description: All file paths relative to `C:\Users\88Devs\Documents\VsCode\cloudflare-worker-pixel-router`. Do not use `~` or `$HOME`. Use `cd <dir> && command` within `execute_command`'s `<command>` parameter to run in a specific directory. Cannot use `cd` tool itself. Respect CWD from command responses if provided.
   R02_ToolSequenceAndConfirmation:
     description: Use tools (incl MCP ops) one at a time. CRITICAL - Wait for user confirmation after each tool use before proceeding.
   R03_EditingToolPreference:

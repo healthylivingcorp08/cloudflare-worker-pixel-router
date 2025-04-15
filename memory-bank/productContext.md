@@ -14,3 +14,6 @@ A serverless Cloudflare Worker that routes conversion events to different pixels
 
 ---
 [2025-04-13 21:14:45] - Initial product context created.
+[2025-04-14 10:37:00] - Added computer-specific workspace paths:
+- Windows 11 PC: C:\Users\88Devs\Documents\VsCode\cloudflare-worker-pixel-router
+- Windows 10 PC: C:\Users\STD\Documents\VsCode\server_cloudflare_tech

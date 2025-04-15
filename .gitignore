@@ -1,28 +1,6 @@
-# Node modules
 node_modules/
-
-# Build output
 dist/
-build/
-
-# Local env files
 .env
-.env.*
-
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# VSCode settings
-.vscode/
-
-# Package lock
-package-lock.json
-
-# Cloudflare Wrangler cache
+.dev.vars
 .wrangler/
+.DS_Store

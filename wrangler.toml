@@ -1,12 +1,29 @@
 name = "cloudflare-worker-pixel-router"
-main = "src/handler.ts"
-compatibility_date = "2024-04-01"
-type = "module"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
 
-[build]
-command = "npm run build"
-
+# KV Namespace for pixel configuration
 [[kv_namespaces]]
 binding = "PIXEL_CONFIG"
 id = "d6db5d0cfcb14e98b2d7f1bd5567f74f"
-preview_id = ""
+
+# Development environment
+[env.dev]
+vars = { ENVIRONMENT = "dev" }
+
+[[env.dev.kv_namespaces]]
+binding = "PIXEL_CONFIG"
+id = "d6db5d0cfcb14e98b2d7f1bd5567f74f"
+preview = true
+
+# Production environment
+[env.production]
+vars = { ENVIRONMENT = "production" }
+
+[[env.production.kv_namespaces]]
+binding = "PIXEL_CONFIG"
+id = "d6db5d0cfcb14e98b2d7f1bd5567f74f"
+
+[vars]
+# Default values for testing (overridden in production)
+STICKYIO_API_KEY = "test_key"

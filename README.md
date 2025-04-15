@@ -1,90 +1,121 @@
 # Cloudflare Worker Pixel Router
 
-A Cloudflare Worker that routes conversion pixels/postbacks based on configurable scrub percentages per site.
+A flexible system for managing tracking pixels and API integrations across multiple sites and pages.
 
 ## Features
 
-- Accepts POST requests with order/conversion data.
-- Determines the site and retrieves scrub % and pixel/postback URLs from a static config.
-- Routes each conversion to the correct pixel/postback based on the scrub %.
-- Fires the appropriate pixel/postback (HTTP request) from the Worker.
-- Returns a response indicating which pixel was fired.
-- (Optional) Logs which conversions went to which pixel for auditability (stubbed).
+- Configurable pixel routing across multiple sites
+- Role-based admin interface for managing configurations
+- Support for multiple pixel types (Everflow click/conversion)
+- API integration support (e.g., StickyIO orders)
+- Scrub percentage handling per site
 
-## File Structure
+## Project Structure
 
 ```
-cloudflare-worker-pixel-router/
-│
 ├── src/
-│   ├── handler.ts      # Main Worker request handler (entry point)
-│   ├── router.ts       # Routing logic (scrub % decision)
-│   ├── config.ts       # Config loading (from static JSON)
-│   ├── pixel.ts        # Pixel/postback firing logic
-│   ├── types.ts        # TypeScript types/interfaces
-│   └── logger.ts       # (Optional) Logging/audit logic
-│
+│   ├── admin/              # Admin UI and API
+│   │   ├── api/           # Admin API endpoints
+│   │   ├── middleware/    # Auth & RBAC
+│   │   ├── ui/           # Admin UI files
+│   │   ├── router.ts     # Admin route handling
+│   │   └── types.ts      # Admin TypeScript types
+│   ├── config.ts          # Configuration handling
+│   ├── handler.ts         # Main request handler
+│   ├── index.ts          # Worker entry point
+│   ├── pixel.ts          # Pixel generation logic
+│   └── types.ts          # Core TypeScript types
 ├── config/
-│   └── sites.json      # Static config: scrub %, pixel URLs per site
-│
-├── wrangler.toml       # Cloudflare Worker config
-├── package.json
-├── tsconfig.json
-└── README.md
+│   └── sites/            # Site-specific configurations
+├── scripts/              # Utility scripts
+└── .github/
+    └── workflows/        # GitHub Actions workflows
 ```
-
-## Setup
-
-1. **Install dependencies:**
-   ```bash
-   cd cloudflare-worker-pixel-router
-   npm install
-   ```
-
-2. **Edit `config/sites.json`** to add or modify site configurations.
-
-## Development
-
-- **Start local dev server:**
-  ```bash
-  npm run dev
-  ```
-
-- **Build TypeScript:**
-  ```bash
-  npm run build
-  ```
 
 ## Deployment
 
-- **Publish to Cloudflare Workers:**
-  ```bash
-  npm run deploy
-  ```
+The project is automatically deployed to Cloudflare Workers when changes are pushed to the `main` branch.
 
-## Usage
+### Requirements
 
-- **POST** conversion data to the Worker endpoint:
-  ```
-  POST / (application/json)
-  {
-    "site": "siteA",
-    "orderId": "12345",
-    "amount": 100,
-    ...
+1. GitHub repository secrets:
+   - `CLOUDFLARE_API_TOKEN`: Your Cloudflare API token
+   - `CLOUDFLARE_ACCOUNT_ID`: Your Cloudflare account ID
+
+2. Configure these in your GitHub repository:
+   1. Go to repository Settings
+   2. Navigate to Secrets and Variables > Actions
+   3. Add the required secrets
+
+### Manual Development
+
+```bash
+# Install dependencies
+npm install
+
+# Run locally
+npm run dev
+
+# Deploy manually (if needed)
+npm run deploy
+```
+
+## Configuration
+
+### Site Configuration
+
+Sites are configured in `config/sites/` with individual JSON files per site:
+
+```json
+{
+  "scrubPercent": 20,
+  "siteId": "getamplihear",
+  "pages": {
+    "presell": {
+      "pixels": [...],
+      "apiEndpoints": [...]
+    }
   }
-  ```
+}
+```
 
-- **Response:**
-  ```json
-  {
-    "pixelType": "normal",
-    "pixelUrl": "https://example.com/pixelA",
-    "fired": true
-  }
-  ```
+### Dynamic Values
 
-## Notes
+Frequently changing values (offer IDs, campaign IDs, etc.) are stored in Cloudflare KV:
 
-- The logger is a stub for auditability and can be extended for real logging.
-- The config is static for MVP; future versions may support dynamic config sources.
+```bash
+# Update a value
+npx wrangler kv:key put --binding=PIXEL_CONFIG siteA_checkout_offer_id "746"
+```
+
+## Admin Interface
+
+Access the admin interface at `/admin/` on your worker domain. Three role levels are available:
+
+1. **Viewer:** View configurations and logs
+2. **Pixel Manager:** Viewer + Edit pixels and their values
+3. **Admin:** Full system access
+
+## Development Notes
+
+- Push to `main` branch to trigger deployment
+- Worker runs at `*.workers.dev` by default
+- Set up Cloudflare Access to secure `/admin/*` routes
+
+## API Documentation
+
+### Admin API Endpoints
+
+```
+# Site Configuration
+GET    /admin/api/sites
+GET    /admin/api/config/:siteId
+PUT    /admin/api/config/:siteId
+POST   /admin/api/config/:siteId
+
+# KV Management
+GET    /admin/api/kv/list
+GET    /admin/api/kv/:key
+PUT    /admin/api/kv/:key
+DELETE /admin/api/kv/:key
+PUT    /admin/api/kv/bulk

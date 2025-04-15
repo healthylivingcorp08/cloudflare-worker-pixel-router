@@ -1,0 +1,69 @@
+{
+  "scrubPercent": 20,
+  "siteId": "getamplihear",
+  "pages": {
+    "presell": {
+      "pixels": [
+        {
+          "type": "everflow_click",
+          "config": {
+            "offer_id": "{KV:siteA_presell_offer_id}",
+            "affiliate_id": "{URL:c1}",
+            "parameterMapping": {
+              "sub1": "{URL:sub1}",
+              "uid": "{URL:uid}",
+              "source_id": "{URL:source_id}",
+              "transaction_id": "{URL:_ef_transaction_id}"
+            }
+          }
+        }
+      ],
+      "apiEndpoints": []
+    },
+    "landing": {
+      "pixels": [
+        {
+          "type": "everflow_click",
+          "config": {
+            "offer_id": "{KV:siteA_landing_offer_id}",
+            "affiliate_id": "{URL:c1}",
+            "parameterMapping": {
+              "sub1": "{URL:sub1}",
+              "uid": "{URL:uid}",
+              "source_id": "{URL:source_id}",
+              "transaction_id": "{URL:_ef_transaction_id}"
+            }
+          }
+        }
+      ],
+      "apiEndpoints": []
+    },
+    "checkout": {
+      "pixels": [
+        {
+          "type": "everflow_conversion",
+          "config": {
+            "offer_id": "{KV:siteA_checkout_offer_id}"
+          }
+        }
+      ],
+      "apiEndpoints": [
+        {
+          "type": "stickyio_order",
+          "endpoint": "{KV:stickyio_api_endpoint}",
+          "method": "POST",
+          "config": {
+            "campaign_id": "{KV:siteA_checkout_campaign_id}",
+            "product_id": "{KV:siteA_checkout_product_id}",
+            "api_key": "{SECRET:stickyio_api_key}"
+          }
+        }
+      ]
+    }
+  },
+  "metadata": {
+    "lastModified": "2025-04-14T23:55:00Z",
+    "modifiedBy": "system",
+    "version": 1
+  }
+}
