@@ -11,7 +11,7 @@ export function jsonResponse<T = any>(data: T, status: number = 200): Response {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, cf-access-jwt-assertion'
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
     }
   });
 }
@@ -52,40 +52,67 @@ export function verifyAuthToken(token: string): boolean {
 }
 
 /**
+ * Check if a path should skip authentication
+ */
+function isPublicPath(url: string): boolean {
+  const publicPaths = [
+    '/admin/login',
+    '/admin/api/auth/login'
+  ];
+  return publicPaths.some(path => url.includes(path));
+}
+
+/**
  * Authentication middleware
  */
 export async function authenticateRequest(request: Request, env: Env): Promise<AuthenticatedRequest | Response> {
-  // Skip auth for login endpoint
-  if (request.url.includes('/admin/api/auth/login')) {
+  const url = new URL(request.url);
+  console.log('[Auth] Checking path:', url.pathname);
+
+  // Skip auth for public paths
+  if (isPublicPath(url.pathname)) {
+    console.log('[Auth] Public path, skipping auth');
     return request as AuthenticatedRequest;
   }
 
   // Skip auth for non-admin routes
-  if (!request.url.includes('/admin/')) {
+  if (!url.pathname.startsWith('/admin/')) {
+    console.log('[Auth] Non-admin path, skipping auth');
     return request as AuthenticatedRequest;
   }
 
-  // Skip auth for login page
-  if (request.url.includes('/admin/login')) {
-    return request as AuthenticatedRequest;
-  }
+  console.log('[Auth] Protected path, checking token');
 
   // Get the token from Authorization header
   const authHeader = request.headers.get('Authorization');
   if (!authHeader?.startsWith('Bearer ')) {
+    console.log('[Auth] No bearer token found');
     return new Response('Authentication required', { 
       status: 401,
       headers: {
         'Content-Type': 'text/plain',
-        'WWW-Authenticate': 'Bearer'
+        'WWW-Authenticate': 'Bearer',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
       }
     });
   }
 
   const token = authHeader.replace('Bearer ', '');
   if (!verifyAuthToken(token)) {
-    return new Response('Invalid or expired token', { status: 401 });
+    console.log('[Auth] Invalid or expired token');
+    return new Response('Invalid or expired token', { 
+      status: 401,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+      }
+    });
   }
+
+  console.log('[Auth] Token valid, proceeding');
 
   // Add basic claims to request
   const authenticatedRequest = request as AuthenticatedRequest;
@@ -113,6 +140,11 @@ export async function authenticateRequest(request: Request, env: Env): Promise<A
  */
 export function requirePermission(permission: string) {
   return async (request: Request, env: Env): Promise<Response | null> => {
+    // Skip permission check for public paths
+    if (isPublicPath(new URL(request.url).pathname)) {
+      return null;
+    }
+
     const authenticatedRequest = request as AuthenticatedRequest;
     
     if (!authenticatedRequest.jwt) {

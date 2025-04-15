@@ -1,27 +1,25 @@
 import { Env } from '../types';
-import { 
-    AuthenticatedRequest, 
-    LoginRequest, 
-    LoginResponse 
-} from './types';
+import { AuthenticatedRequest, LoginRequest, LoginResponse } from './types';
 import { errorResponse, successResponse } from './middleware/auth';
 import {
-    handleListSites,
-    handleGetSiteConfig,
-    handleUpdateSiteConfig,
-    handleCreateSiteConfig
+  handleListSites,
+  handleGetSiteConfig,
+  handleUpdateSiteConfig,
+  handleCreateSiteConfig
 } from './api/config';
 import {
-    handleListKeys,
-    handleGetValue,
-    handleUpdateValue,
-    handleDeleteValue,
-    handleBulkUpdate
+  handleListKeys,
+  handleGetValue,
+  handleUpdateValue,
+  handleDeleteValue,
+  handleBulkUpdate
 } from './api/kv';
 
-// Previous HTML content remains the same...
-const loginHtml = `...`; // Your existing login HTML
-const adminHtml = `...`; // Your existing admin HTML
+// Login page HTML
+const loginHtml = `...`; // Previous login HTML content
+
+// Admin UI HTML
+const adminHtml = `...`; // Previous admin HTML content
 
 /**
  * Handle authentication
@@ -34,20 +32,27 @@ async function handleAuth(request: Request, env: Env): Promise<Response> {
             const body = await request.json() as LoginRequest;
             const { username, password } = body;
 
+            console.log('[Auth] Login attempt for username:', username);
+
             if (!username || !password) {
                 return errorResponse('Username and password are required', 400);
             }
             
             // Get stored credentials
             const storedPassword = await env.PIXEL_CONFIG.get(`auth_${username}`);
+            console.log('[Auth] Checking credentials...');
+
             if (!storedPassword || storedPassword !== password) {
+                console.log('[Auth] Invalid credentials');
                 return errorResponse('Invalid credentials', 401);
             }
 
-            // Generate a simple token (in production, use proper JWT)
+            console.log('[Auth] Login successful');
+            // Generate a simple token
             const token = btoa(`${username}:${Date.now()}`);
             return successResponse<LoginResponse>({ token });
         } catch (error) {
+            console.error('[Auth] Login error:', error);
             return errorResponse('Invalid request', 400);
         }
     }
@@ -127,9 +132,12 @@ async function handleAPI(request: AuthenticatedRequest, env: Env): Promise<Respo
 
 /**
  * Main admin request handler
+ * @param request The incoming request
+ * @param env The environment containing KV bindings
  */
 export async function handleAdminRequest(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    console.log('[Admin] Request for:', url.pathname);
     
     // Handle API requests
     if (url.pathname.startsWith('/admin/api/')) {
@@ -139,3 +147,7 @@ export async function handleAdminRequest(request: Request, env: Env): Promise<Re
     // Handle UI requests
     return handleAdminUI(request);
 }
+
+export default {
+    handleAdminRequest
+};
