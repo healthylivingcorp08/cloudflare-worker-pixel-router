@@ -54,12 +54,13 @@ export function verifyAuthToken(token: string): boolean {
 /**
  * Check if a path should skip authentication
  */
-function isPublicPath(url: string): boolean {
+function isPublicPath(pathname: string): boolean {
   const publicPaths = [
     '/admin/login',
     '/admin/api/auth/login'
   ];
-  return publicPaths.some(path => url.includes(path));
+  // Ensure exact match or match with trailing slash for login page
+  return publicPaths.some(path => pathname === path || pathname === path + '/');
 }
 
 /**
@@ -67,31 +68,40 @@ function isPublicPath(url: string): boolean {
  */
 export async function authenticateRequest(request: Request, env: Env): Promise<AuthenticatedRequest | Response> {
   const url = new URL(request.url);
-  console.log('[Auth] Checking path:', url.pathname);
+  const pathname = url.pathname;
+  console.log('[Auth] Checking path:', pathname);
 
-  // Skip auth for public paths
-  if (isPublicPath(url.pathname)) {
-    console.log('[Auth] Public path, skipping auth');
-    return request as AuthenticatedRequest;
-  }
-
-  // Skip auth for non-admin routes
-  if (!url.pathname.startsWith('/admin/')) {
+  // Skip auth for non-admin routes entirely
+  if (!pathname.startsWith('/admin/')) {
     console.log('[Auth] Non-admin path, skipping auth');
     return request as AuthenticatedRequest;
   }
 
-  console.log('[Auth] Protected path, checking token');
+  // Allow access to public admin paths (login page and API)
+  if (isPublicPath(pathname)) {
+    console.log('[Auth] Public admin path, skipping token check');
+    return request as AuthenticatedRequest;
+  }
+
+  console.log('[Auth] Protected admin path, checking token');
 
   // Get the token from Authorization header
   const authHeader = request.headers.get('Authorization');
   if (!authHeader?.startsWith('Bearer ')) {
     console.log('[Auth] No bearer token found');
-    return new Response('Authentication required', { 
+    // Redirect to login page if it's a UI request (GET, not API), otherwise return 401
+    if (request.method === 'GET' && !pathname.startsWith('/admin/api/')) {
+      const redirectUrl = url.origin + '/admin/login';
+      console.log(`[Auth] Redirecting UI request to: ${redirectUrl}`);
+      return Response.redirect(redirectUrl, 302); // Use 302 for temporary redirect
+    }
+    // Return 401 for API requests or non-GET requests without token
+    console.log('[Auth] Returning 401 for missing token (API or non-GET)');
+    return new Response('Authentication required', {
       status: 401,
       headers: {
         'Content-Type': 'text/plain',
-        'WWW-Authenticate': 'Bearer',
+        'WWW-Authenticate': 'Bearer realm="Admin Area"', // Added realm
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization'
@@ -102,7 +112,15 @@ export async function authenticateRequest(request: Request, env: Env): Promise<A
   const token = authHeader.replace('Bearer ', '');
   if (!verifyAuthToken(token)) {
     console.log('[Auth] Invalid or expired token');
-    return new Response('Invalid or expired token', { 
+    // Redirect to login page if it's a UI request, otherwise return 401
+    if (request.method === 'GET' && !pathname.startsWith('/admin/api/')) {
+      const redirectUrl = url.origin + '/admin/login';
+      console.log(`[Auth] Redirecting UI request due to invalid token to: ${redirectUrl}`);
+      // Clear potentially bad token before redirect? Maybe not necessary.
+      return Response.redirect(redirectUrl, 302);
+    }
+    console.log('[Auth] Returning 401 for invalid token (API or non-GET)');
+    return new Response('Invalid or expired token', {
       status: 401,
       headers: {
         'Access-Control-Allow-Origin': '*',
@@ -118,17 +136,17 @@ export async function authenticateRequest(request: Request, env: Env): Promise<A
   const authenticatedRequest = request as AuthenticatedRequest;
   authenticatedRequest.jwt = {
     aud: [],
-    email: 'admin@example.com',
-    exp: 0,
-    iat: 0,
-    nbf: 0,
+    email: 'admin@example.com', // Placeholder
+    exp: 0, // Placeholder
+    iat: 0, // Placeholder
+    nbf: 0, // Placeholder
     iss: 'pixel-router',
     type: 'admin',
     identity_nonce: '',
-    sub: 'admin',
+    sub: 'admin', // Placeholder
     country: 'US',
     custom: {
-      role: 'admin'
+      role: 'admin' // Assume admin for now, RBAC check happens later
     }
   };
 
@@ -146,12 +164,13 @@ export function requirePermission(permission: string) {
     }
 
     const authenticatedRequest = request as AuthenticatedRequest;
-    
+
     if (!authenticatedRequest.jwt) {
+      // This should ideally be caught by authenticateRequest, but double-check
       return new Response('Unauthorized', { status: 401 });
     }
 
-    const role = authenticatedRequest.jwt.custom?.role || 'viewer';
+    const role = authenticatedRequest.jwt.custom?.role || 'viewer'; // Default to viewer if role missing
     if (!hasPermission(role, permission)) {
       return new Response('Forbidden', { status: 403 });
     }
