@@ -73,7 +73,19 @@ const loginHtml = `<!DOCTYPE html>
 </html>`;
 
 // Admin UI HTML (previous content remains the same...)
-const adminHtml = `...`; // Previous admin HTML content
+const adminHtml = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+    <style> body { font-family: sans-serif; padding: 20px; } </style>
+</head>
+<body>
+    <h1>Admin Dashboard</h1>
+    <p>Welcome! You are logged in.</p>
+    <p>Admin functionality will be added here.</p>
+    <button onclick="localStorage.removeItem('adminToken'); window.location.href='/admin/login';">Logout</button>
+</body>
+</html>`;
 
 /**
  * Handle authentication
