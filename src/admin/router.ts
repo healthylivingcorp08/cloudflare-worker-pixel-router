@@ -601,16 +601,34 @@ async function handleAPI(request: AuthenticatedRequest, env: Env): Promise<Respo
  * Main admin request handler
  */
 export async function handleAdminRequest(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    console.log('[Admin] Request for:', url.pathname);
+    try {
+        const url = new URL(request.url);
+        console.log('[Admin] Request for:', url.pathname);
 
-    // Handle API requests
-    if (url.pathname.startsWith('/admin/api/')) {
-        // Note: Authentication check happens in src/index.ts *before* calling this for protected API routes
-        return handleAPI(request as AuthenticatedRequest, env);
+        // Handle API requests
+        if (url.pathname.startsWith('/admin/api/')) {
+            console.log('[Admin] Handling API request');
+            // Note: Authentication check happens in src/index.ts *before* calling this for protected API routes
+            const response = await handleAPI(request as AuthenticatedRequest, env);
+            console.log('[Admin] API response status:', response.status);
+            return response;
+        }
+
+        // Handle UI requests
+        console.log('[Admin] Handling UI request');
+        const response = await handleAdminUI(request);
+        console.log('[Admin] UI response status:', response.status);
+        return response;
+    } catch (error) {
+        console.error('[Admin] Error handling request:', error);
+        return new Response('Internal Server Error', {
+            status: 500,
+            headers: {
+                'Content-Type': 'text/plain',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+            }
+        });
     }
-
-    // Handle UI requests
-    // Let handleAdminUI decide which HTML to serve (login or main admin)
-    return handleAdminUI(request);
 }

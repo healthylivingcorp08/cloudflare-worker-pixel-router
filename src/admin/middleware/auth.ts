@@ -145,12 +145,32 @@ export function requirePermission(permission: string) {
 
     if (!authenticatedRequest.jwt) {
       // This should ideally be caught by authenticateRequest, but double-check
-      return new Response('Unauthorized', { status: 401 });
+      console.error('[Auth] No JWT found in request for permission check:', permission);
+      return new Response('Unauthorized', {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        }
+      });
     }
 
     const role = authenticatedRequest.jwt.custom?.role || 'viewer'; // Default to viewer if role missing
-    if (!hasPermission(role, permission)) {
-      return new Response('Forbidden', { status: 403 });
+    const hasAccess = hasPermission(role, permission);
+    console.log('[Auth] Permission check:', { role, permission, hasAccess });
+    
+    if (!hasAccess) {
+      return new Response('Forbidden', {
+        status: 403,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        }
+      });
     }
 
     return null; // Continue to next handler

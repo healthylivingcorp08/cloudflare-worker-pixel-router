@@ -11,9 +11,11 @@ export async function handleListKeys(request: AuthenticatedRequest, env: Env): P
   try {
     const url = new URL(request.url);
     const siteId = url.searchParams.get('siteId');
-    
     // List all keys from the KV namespace
+    console.log('[KV] Listing keys for siteId:', siteId);
     const keys = await env.PIXEL_CONFIG.list();
+    console.log('[KV] Found', keys.keys.length, 'total keys');
+    
     
     // Fetch values for all keys concurrently
     const keyPromises = keys.keys
@@ -33,8 +35,12 @@ export async function handleListKeys(request: AuthenticatedRequest, env: Env): P
 
     const keyInfos = await Promise.all(keyPromises);
 
-    return successResponse(keyInfos);
+    console.log('[KV] Found keys:', keyInfos);
+    const response = successResponse(keyInfos);
+    console.log('[KV] Response:', response.status);
+    return response;
   } catch (error) {
+    console.error('[KV] Error listing keys:', error);
     return errorResponse('Failed to list KV keys');
   }
 }
