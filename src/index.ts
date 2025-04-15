@@ -9,7 +9,8 @@ function isAdminPublicPath(pathname: string): boolean {
     '/admin/login',
     '/admin/api/auth/login'
   ];
-  return publicPaths.some(path => pathname === path);
+  // Check for exact match or match with trailing slash
+  return publicPaths.some(path => pathname === path || pathname === path + '/');
 }
 
 export default {
@@ -24,26 +25,27 @@ export default {
       if (pathname.startsWith('/admin')) {
         console.log('[Worker] Admin path detected');
 
-        // If it's a public admin path (login page/API), handle directly
-        if (isAdminPublicPath(pathname)) {
-          console.log('[Worker] Public admin path, routing directly');
+        // If it's the base admin path or the login page, let the admin router handle it directly.
+        // The UI itself will check for a token and redirect if necessary.
+        if (pathname === '/admin' || pathname === '/admin/' || isAdminPublicPath(pathname)) {
+          console.log('[Worker] Public or base admin path, routing directly to admin handler');
           return handleAdminRequest(request, env);
         }
 
-        // Otherwise, it's a protected admin path, authenticate first
-        console.log('[Worker] Protected admin path, authenticating...');
+        // Otherwise, it's a protected admin API path, authenticate first
+        console.log('[Worker] Protected admin API path, authenticating...');
         const authResult = await authenticateRequest(request, env);
 
         // If authentication failed or redirected, return the response
         if (authResult instanceof Response) {
-          console.log('[Worker] Auth failed or redirected');
+          console.log('[Worker] Auth failed or redirected for API');
           return authResult;
         }
 
-        // Handle the admin request with the authenticated request object
-        console.log('[Worker] Auth success, handling protected admin request');
+        // Handle the protected admin API request with the authenticated request object
+        console.log('[Worker] Auth success, handling protected admin API request');
         const response = await handleAdminRequest(authResult, env);
-        console.log('[Worker] Admin response status:', response.status);
+        console.log('[Worker] Admin API response status:', response.status);
         return response;
 
       }
