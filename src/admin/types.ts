@@ -13,7 +13,6 @@ export interface JWTClaims {
   identity_nonce: string;
   sub: string;
   country: string;
-  // Custom claim for role
   custom: {
     role: UserRole;
   };
@@ -29,6 +28,27 @@ export interface AdminApiResponse<T = any> {
   success: boolean;
   data?: T;
   error?: string;
+}
+
+// Cloudflare Access JWT Verification
+export interface AccessJWTHeader {
+  kid: string;
+  alg: string;
+}
+
+export interface AccessJWTKey {
+  kid: string;
+  kty: string;
+  n: string;
+  e: string;
+}
+
+export interface AccessCertsResponse {
+  keys: AccessJWTKey[];
+  public_cert: {
+    cert: string;
+  };
+  public_certs: string[];
 }
 
 // Site Configuration Types
