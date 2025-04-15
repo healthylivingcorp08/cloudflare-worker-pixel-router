@@ -52,6 +52,10 @@ const adminHtml = `<!DOCTYPE html>
             padding: 8px;
             border: 1px solid #ddd;
             border-radius: 4px;
+            min-width: 150px;
+        }
+        .filters input {
+            flex-grow: 1;
         }
         table { 
             width: 100%; 
@@ -64,6 +68,7 @@ const adminHtml = `<!DOCTYPE html>
         }
         th {
             background: #f8f9fa;
+            white-space: nowrap;
         }
         .value-cell {
             font-family: monospace;
@@ -78,6 +83,7 @@ const adminHtml = `<!DOCTYPE html>
             padding: 8px 16px; 
             border-radius: 4px; 
             cursor: pointer; 
+            white-space: nowrap;
         }
         button:hover { 
             background: #0056b3; 
@@ -93,6 +99,9 @@ const adminHtml = `<!DOCTYPE html>
             padding: 15px;
             background: #f8f9fa;
             border-radius: 4px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
         }
         .checkbox-cell {
             width: 30px;
@@ -102,24 +111,27 @@ const adminHtml = `<!DOCTYPE html>
             color: #666;
             margin-left: 10px;
         }
+        .user-info {
+            color: #666;
+            font-size: 14px;
+            margin-left: 15px;
+        }
     </style>
 </head>
 <body>
     <div class="card">
         <div class="header-actions">
-            <h1>Pixel Router Admin</h1>
+            <div>
+                <h1>Pixel Router Admin</h1>
+                <span class="user-info">Requires authentication - contact admin for access</span>
+            </div>
             <div>
                 <button class="action-button" onclick="reloadData()">
-                    ↻ Reload Data
+                    ↻ Reload Values
                 </button>
                 <span id="loading" class="loading">Loading...</span>
             </div>
         </div>
-    </div>
-
-    <div class="card">
-        <h2>Site Configuration</h2>
-        <div id="siteConfig"></div>
     </div>
 
     <div class="card">
@@ -131,12 +143,13 @@ const adminHtml = `<!DOCTYPE html>
             <select id="typeFilter">
                 <option value="">All Types</option>
             </select>
-            <input type="text" id="searchFilter" placeholder="Search keys...">
+            <input type="text" id="searchFilter" placeholder="Search keys or values...">
         </div>
         <div class="bulk-actions">
             <button onclick="bulkEdit()">Bulk Edit Selected</button>
             <button onclick="selectAll()">Select All</button>
             <button onclick="deselectAll()">Deselect All</button>
+            <span id="selectedCount"></span>
         </div>
         <div id="kvValues"></div>
     </div>
@@ -162,12 +175,20 @@ const adminHtml = `<!DOCTYPE html>
             });
         }
 
+        function updateSelectedCount() {
+            const count = document.querySelectorAll('.kv-select:checked').length;
+            const total = document.querySelectorAll('.kv-select').length;
+            document.getElementById('selectedCount').textContent = 
+                count ? \`\${count} of \${total} selected\` : '';
+        }
+
         function filterAndDisplayKVData() {
             const siteFilter = document.getElementById('siteFilter').value;
             const typeFilter = document.getElementById('typeFilter').value;
             const searchFilter = document.getElementById('searchFilter').value.toLowerCase();
             
             const filteredData = kvData.filter(item => {
+                if (item.key === 'site_config_siteA') return false; // Hide site config
                 const matchesSite = !siteFilter || item.key.startsWith(siteFilter);
                 const matchesType = !typeFilter || item.type === typeFilter;
                 const matchesSearch = !searchFilter || 
@@ -177,6 +198,7 @@ const adminHtml = `<!DOCTYPE html>
             });
             
             displayKVData(filteredData);
+            updateSelectedCount();
         }
 
         function displayKVData(data) {
@@ -194,7 +216,7 @@ const adminHtml = `<!DOCTYPE html>
                         \${data.map(item => \`
                             <tr>
                                 <td class="checkbox-cell">
-                                    <input type="checkbox" class="kv-select" data-key="\${item.key}">
+                                    <input type="checkbox" class="kv-select" data-key="\${item.key}" onchange="updateSelectedCount()">
                                 </td>
                                 <td>\${item.key}</td>
                                 <td class="value-cell">\${item.value}</td>
@@ -207,15 +229,18 @@ const adminHtml = `<!DOCTYPE html>
                 </table>
             \`;
             
-            document.getElementById('kvValues').innerHTML = table;
+            document.getElementById('kvValues').innerHTML = data.length ? table :
+                '<p>No matching values found</p>';
         }
 
         function selectAll() {
             document.querySelectorAll('.kv-select').forEach(cb => cb.checked = true);
+            updateSelectedCount();
         }
 
         function deselectAll() {
             document.querySelectorAll('.kv-select').forEach(cb => cb.checked = false);
+            updateSelectedCount();
         }
 
         async function bulkEdit() {
@@ -281,18 +306,14 @@ const adminHtml = `<!DOCTYPE html>
                 sites = new Set();
                 types = new Set();
 
-                const [configData, listData] = await Promise.all([
-                    fetch('/admin/api/config/siteA').then(r => r.json()),
+                const [_, listData] = await Promise.all([
+                    Promise.resolve(), // Removed site config fetch
                     fetch('/admin/api/kv/list').then(r => r.json())
                 ]);
 
-                if (configData.success) {
-                    document.getElementById('siteConfig').innerHTML = 
-                        '<pre>' + JSON.stringify(configData.data, null, 2) + '</pre>';
-                }
-
                 if (listData.success) {
                     for (const key of listData.data) {
+                        if (key.name === 'site_config_siteA') continue; // Skip site config
                         const valueResponse = await fetch(\`/admin/api/kv/\${key.name}\`);
                         const valueData = await valueResponse.json();
                         
@@ -360,16 +381,6 @@ async function handleAPI(request: AuthenticatedRequest, env: Env): Promise<Respo
     try {
         if (path === '/sites') {
             return handleListSites(request, env);
-        }
-
-        if (path.match(/^\/config\/[^\/]+$/)) {
-            const siteId = path.split('/').pop()!;
-            switch (request.method) {
-                case 'GET': return handleGetSiteConfig(request, env, siteId);
-                case 'PUT': return handleUpdateSiteConfig(request, env, siteId);
-                case 'POST': return handleCreateSiteConfig(request, env, siteId);
-                default: return errorResponse('Method not allowed', 405);
-            }
         }
 
         if (path === '/kv/list') {
