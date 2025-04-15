@@ -1,12 +1,15 @@
 import { Env } from '../types';
 import { AuthenticatedRequest } from './types';
 import { errorResponse } from './middleware/auth';
+
+// API Handlers
 import {
   handleListSites,
   handleGetSiteConfig,
   handleUpdateSiteConfig,
   handleCreateSiteConfig
 } from './api/config';
+
 import {
   handleListKeys,
   handleGetValue,
@@ -33,6 +36,12 @@ const adminHtml = `<!DOCTYPE html>
             border-radius: 8px; 
             margin-bottom: 20px; 
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
         }
         .filters {
             display: flex;
@@ -73,6 +82,12 @@ const adminHtml = `<!DOCTYPE html>
         button:hover { 
             background: #0056b3; 
         }
+        .action-button {
+            background: #28a745;
+        }
+        .action-button:hover {
+            background: #218838;
+        }
         .bulk-actions {
             margin-bottom: 15px;
             padding: 15px;
@@ -82,11 +97,24 @@ const adminHtml = `<!DOCTYPE html>
         .checkbox-cell {
             width: 30px;
         }
+        .loading {
+            display: none;
+            color: #666;
+            margin-left: 10px;
+        }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>Pixel Router Admin</h1>
+        <div class="header-actions">
+            <h1>Pixel Router Admin</h1>
+            <div>
+                <button class="action-button" onclick="reloadData()">
+                    ↻ Reload Data
+                </button>
+                <span id="loading" class="loading">Loading...</span>
+            </div>
+        </div>
     </div>
 
     <div class="card">
@@ -122,11 +150,9 @@ const adminHtml = `<!DOCTYPE html>
             const siteSelect = document.getElementById('siteFilter');
             const typeSelect = document.getElementById('typeFilter');
             
-            // Clear existing options
             siteSelect.innerHTML = '<option value="">All Sites</option>';
             typeSelect.innerHTML = '<option value="">All Types</option>';
             
-            // Add new options
             [...sites].sort().forEach(site => {
                 siteSelect.innerHTML += \`<option value="\${site}">\${site}</option>\`;
             });
@@ -215,7 +241,7 @@ const adminHtml = `<!DOCTYPE html>
                 const result = await response.json();
                 if (result.success) {
                     alert('Values updated successfully!');
-                    location.reload();
+                    reloadData();
                 } else {
                     alert('Failed to update values: ' + result.error);
                 }
@@ -236,7 +262,7 @@ const adminHtml = `<!DOCTYPE html>
                     const data = await response.json();
                     if (data.success) {
                         alert('Value updated successfully!');
-                        location.reload();
+                        reloadData();
                     } else {
                         alert('Failed to update value: ' + data.error);
                     }
@@ -246,48 +272,62 @@ const adminHtml = `<!DOCTYPE html>
             }
         }
 
-        // Load data
-        Promise.all([
-            fetch('/admin/api/config/siteA').then(r => r.json()),
-            fetch('/admin/api/kv/list').then(r => r.json())
-        ]).then(async ([configData, listData]) => {
-            // Display config
-            if (configData.success) {
-                document.getElementById('siteConfig').innerHTML = 
-                    '<pre>' + JSON.stringify(configData.data, null, 2) + '</pre>';
-            }
+        async function reloadData() {
+            const loadingEl = document.getElementById('loading');
+            loadingEl.style.display = 'inline';
+            
+            try {
+                kvData = [];
+                sites = new Set();
+                types = new Set();
 
-            // Process KV data
-            if (listData.success) {
-                for (const key of listData.data) {
-                    const valueResponse = await fetch(\`/admin/api/kv/\${key.name}\`);
-                    const valueData = await valueResponse.json();
-                    
-                    // Extract site and type from key
-                    const parts = key.name.split('_');
-                    const site = parts[0];
-                    const type = parts.slice(1, -1).join('_');
-                    
-                    sites.add(site);
-                    if (type) types.add(type);
-                    
-                    kvData.push({
-                        key: key.name,
-                        value: valueData.data.value,
-                        site,
-                        type
-                    });
+                const [configData, listData] = await Promise.all([
+                    fetch('/admin/api/config/siteA').then(r => r.json()),
+                    fetch('/admin/api/kv/list').then(r => r.json())
+                ]);
+
+                if (configData.success) {
+                    document.getElementById('siteConfig').innerHTML = 
+                        '<pre>' + JSON.stringify(configData.data, null, 2) + '</pre>';
                 }
 
-                updateFilters();
-                filterAndDisplayKVData();
+                if (listData.success) {
+                    for (const key of listData.data) {
+                        const valueResponse = await fetch(\`/admin/api/kv/\${key.name}\`);
+                        const valueData = await valueResponse.json();
+                        
+                        const parts = key.name.split('_');
+                        const site = parts[0];
+                        const type = parts.slice(1, -1).join('_');
+                        
+                        sites.add(site);
+                        if (type) types.add(type);
+                        
+                        kvData.push({
+                            key: key.name,
+                            value: valueData.data.value,
+                            site,
+                            type
+                        });
+                    }
 
-                // Add event listeners for filters
-                document.getElementById('siteFilter').addEventListener('change', filterAndDisplayKVData);
-                document.getElementById('typeFilter').addEventListener('change', filterAndDisplayKVData);
-                document.getElementById('searchFilter').addEventListener('input', filterAndDisplayKVData);
+                    updateFilters();
+                    filterAndDisplayKVData();
+                }
+            } catch (error) {
+                alert('Error reloading data: ' + error);
+            } finally {
+                loadingEl.style.display = 'none';
             }
-        });
+        }
+
+        // Initial load
+        reloadData();
+
+        // Add event listeners for filters
+        document.getElementById('siteFilter').addEventListener('change', filterAndDisplayKVData);
+        document.getElementById('typeFilter').addEventListener('change', filterAndDisplayKVData);
+        document.getElementById('searchFilter').addEventListener('input', filterAndDisplayKVData);
     </script>
 </body>
 </html>`;
