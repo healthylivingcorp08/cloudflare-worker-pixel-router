@@ -15,22 +15,23 @@ export async function handleListKeys(request: AuthenticatedRequest, env: Env): P
     // List all keys from the KV namespace
     const keys = await env.PIXEL_CONFIG.list();
     
-    const keyInfos: KVKeyInfo[] = keys.keys
-      // Filter by siteId if provided
+    // Fetch values for all keys concurrently
+    const keyPromises = keys.keys
       .filter(key => !siteId || key.name.startsWith(`${siteId}_`))
-      // Transform to KVKeyInfo objects
-      .map(key => {
+      .map(async (key) => {
+        const value = await env.PIXEL_CONFIG.get(key.name);
         const parts = key.name.split('_');
         return {
           name: key.name,
+          value: value, // Include the value
           site: parts[0],
-          // Everything after the site prefix and before the last part
           type: parts.slice(1, -1).join('_'),
           metadata: key.metadata,
-          // Basic role permissions based on key type
           allowedRoles: key.name.includes('_api_') ? ['admin'] : ['pixel_manager', 'admin']
         };
       });
+
+    const keyInfos = await Promise.all(keyPromises);
 
     return successResponse(keyInfos);
   } catch (error) {

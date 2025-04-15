@@ -201,6 +201,23 @@ const adminHtml = `<!DOCTYPE html>
             color: white;
             border: none;
         }
+        .filter-container {
+            margin-bottom: 1rem;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+        .filter-input {
+            padding: 0.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.25rem;
+            flex-grow: 1; /* Take available space */
+        }
+        .bulk-edit-btn {
+             background: #f59e0b; /* Amber color */
+             color: white;
+             border: none;
+        }
     </style>
 </head>
 <body>
