@@ -1,7 +1,7 @@
 // Admin Role Types
 export type UserRole = 'viewer' | 'pixel_manager' | 'admin';
 
-// JWT Claims structure from Cloudflare Access
+// JWT Claims structure
 export interface JWTClaims {
   aud: string[];
   email: string;
@@ -28,6 +28,16 @@ export interface AdminApiResponse<T = any> {
   success: boolean;
   data?: T;
   error?: string;
+}
+
+// Auth types
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  token: string;
 }
 
 // Cloudflare Access JWT Verification

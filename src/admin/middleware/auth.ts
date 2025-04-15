@@ -1,61 +1,33 @@
 import { Env } from '../../types';
-import { 
-  AuthenticatedRequest, 
-  JWTClaims, 
-  UserRole, 
-  ROLE_PERMISSIONS,
-  AccessJWTHeader,
-  AccessJWTKey,
-  AccessCertsResponse
-} from '../types';
+import { AuthenticatedRequest, JWTClaims, UserRole, ROLE_PERMISSIONS } from '../types';
 
 /**
- * Decode JWT without verification
+ * Helper to create a JSON response
  */
-function decodeJWT(token: string): { header: AccessJWTHeader; payload: any } {
-  const [headerB64, payloadB64] = token.split('.');
-  const header = JSON.parse(atob(headerB64));
-  const payload = JSON.parse(atob(payloadB64));
-  return { header, payload };
+export function jsonResponse<T = any>(data: T, status: number = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, cf-access-jwt-assertion'
+    }
+  });
 }
 
 /**
- * Verify Cloudflare Access JWT
+ * Create an error response
  */
-async function verifyJWT(token: string, env: Env): Promise<JWTClaims | null> {
-  try {
-    const { header, payload } = decodeJWT(token);
-    
-    // Get Cloudflare Access public keys
-    const response = await fetch('https://healthylivingcorp08.cloudflareaccess.com/cdn-cgi/access/certs');
-    const certsData = await response.json() as AccessCertsResponse;
-    
-    // Find the key used to sign this token
-    const key = certsData.keys.find((k: AccessJWTKey) => k.kid === header.kid);
-    if (!key) {
-      console.error('No matching key found');
-      return null;
-    }
+export function errorResponse(message: string, status: number = 400): Response {
+  return jsonResponse({ success: false, error: message }, status);
+}
 
-    // For now, we'll do basic validation
-    // In production, you should verify the signature using the public key
-    
-    // Verify time-based claims
-    const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
-      console.error('Token expired');
-      return null;
-    }
-    if (payload.nbf && payload.nbf > now) {
-      console.error('Token not yet valid');
-      return null;
-    }
-
-    return payload as JWTClaims;
-  } catch (error) {
-    console.error('JWT verification error:', error);
-    return null;
-  }
+/**
+ * Create a success response
+ */
+export function successResponse<T = any>(data: T): Response {
+  return jsonResponse({ success: true, data }, 200);
 }
 
 /**
@@ -66,34 +38,72 @@ export function hasPermission(role: UserRole, permission: string): boolean {
 }
 
 /**
+ * Verify authentication token
+ */
+export function verifyAuthToken(token: string): boolean {
+  try {
+    const [username, timestamp] = atob(token).split(':');
+    const tokenAge = Date.now() - parseInt(timestamp);
+    // Token valid for 24 hours
+    return tokenAge < 24 * 60 * 60 * 1000;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Authentication middleware
  */
 export async function authenticateRequest(request: Request, env: Env): Promise<AuthenticatedRequest | Response> {
+  // Skip auth for login endpoint
+  if (request.url.includes('/admin/api/auth/login')) {
+    return request as AuthenticatedRequest;
+  }
+
   // Skip auth for non-admin routes
   if (!request.url.includes('/admin/')) {
     return request as AuthenticatedRequest;
   }
 
-  // Get the JWT from Cloudflare Access header
-  const cfAccessToken = request.headers.get('cf-access-jwt-assertion');
-  if (!cfAccessToken) {
+  // Skip auth for login page
+  if (request.url.includes('/admin/login')) {
+    return request as AuthenticatedRequest;
+  }
+
+  // Get the token from Authorization header
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
     return new Response('Authentication required', { 
       status: 401,
       headers: {
         'Content-Type': 'text/plain',
-        'WWW-Authenticate': 'Bearer realm="Cloudflare Access"'
+        'WWW-Authenticate': 'Bearer'
       }
     });
   }
 
-  const jwt = await verifyJWT(cfAccessToken, env);
-  if (!jwt) {
-    return new Response('Invalid token', { status: 401 });
+  const token = authHeader.replace('Bearer ', '');
+  if (!verifyAuthToken(token)) {
+    return new Response('Invalid or expired token', { status: 401 });
   }
 
-  // Add the JWT claims to the request object
+  // Add basic claims to request
   const authenticatedRequest = request as AuthenticatedRequest;
-  authenticatedRequest.jwt = jwt;
+  authenticatedRequest.jwt = {
+    aud: [],
+    email: 'admin@example.com',
+    exp: 0,
+    iat: 0,
+    nbf: 0,
+    iss: 'pixel-router',
+    type: 'admin',
+    identity_nonce: '',
+    sub: 'admin',
+    country: 'US',
+    custom: {
+      role: 'admin'
+    }
+  };
 
   return authenticatedRequest;
 }
@@ -116,33 +126,4 @@ export function requirePermission(permission: string) {
 
     return null; // Continue to next handler
   };
-}
-
-/**
- * Helper to create a JSON response
- */
-export function jsonResponse(data: any, status: number = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, cf-access-jwt-assertion'
-    }
-  });
-}
-
-/**
- * Create an error response
- */
-export function errorResponse(message: string, status: number = 400): Response {
-  return jsonResponse({ success: false, error: message }, status);
-}
-
-/**
- * Create a success response
- */
-export function successResponse(data: any): Response {
-  return jsonResponse({ success: true, data });
 }

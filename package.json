@@ -8,6 +8,8 @@
     "deploy": "bash scripts/deploy.sh",
     "deploy:msg": "bash scripts/deploy.sh",
     "init-config": "node scripts/init-config.js",
+    "init-auth": "node scripts/init-auth.js",
+    "setup": "npm run init-config && npm run init-auth",
     "update-kv": "ts-node --transpile-only scripts/update-kv.ts",
     "test": "jest",
     "build": "wrangler build",
