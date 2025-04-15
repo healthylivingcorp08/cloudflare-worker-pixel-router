@@ -298,6 +298,17 @@ async function handleAuth(request: Request, env: Env): Promise<Response> {
 async function handleAdminUI(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
+    // Serve static admin.js
+    if (url.pathname === '/admin/ui/admin.js') {
+        // In production, you would use a bundler or build step to copy the JS file to the output directory.
+        // Here, we read the file from the source directory.
+        // @ts-ignore
+        const js = await __STATIC_CONTENT.get('src/admin/ui/admin.js', 'stream') || '';
+        return new Response(js, {
+            headers: { 'Content-Type': 'application/javascript' }
+        });
+    }
+
     // Serve login page
     if (url.pathname === '/admin/login' || url.pathname === '/admin/login/') {
         console.log('[Admin UI] Serving simplified login page');
