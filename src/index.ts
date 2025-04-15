@@ -7,9 +7,11 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
       const url = new URL(request.url);
+      console.log('Handling request for:', url.pathname);
 
       // Handle admin routes
-      if (url.pathname.startsWith('/admin/')) {
+      if (url.pathname.startsWith('/admin')) {
+        console.log('Routing to admin handler');
         // Authenticate the request
         const authResult = await authenticateRequest(request, env);
         
@@ -23,6 +25,7 @@ export default {
       }
 
       // Handle regular pixel routing requests
+      console.log('Routing to pixel handler');
       return handleRequest(request, env);
     } catch (error) {
       console.error('Worker error:', error);
