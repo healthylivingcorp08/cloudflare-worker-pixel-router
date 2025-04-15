@@ -1,25 +1,4 @@
-import { Env } from '../types';
-import { AuthenticatedRequest } from './types';
-import { errorResponse } from './middleware/auth';
-
-// API Handlers
-import {
-  handleListSites,
-  handleGetSiteConfig,
-  handleUpdateSiteConfig,
-  handleCreateSiteConfig
-} from './api/config';
-
-import {
-  handleListKeys,
-  handleGetValue,
-  handleUpdateValue,
-  handleDeleteValue,
-  handleBulkUpdate
-} from './api/kv';
-
-// Read the admin UI HTML
-const adminHtml = `<!DOCTYPE html>
+<!DOCTYPE html>
 <html>
 <head>
     <title>Pixel Router Admin</title>
@@ -120,7 +99,7 @@ const adminHtml = `<!DOCTYPE html>
             
             if (data.success) {
                 const table = document.createElement('table');
-                table.innerHTML = \`
+                table.innerHTML = `
                     <thead>
                         <tr>
                             <th>Key</th>
@@ -129,24 +108,24 @@ const adminHtml = `<!DOCTYPE html>
                         </tr>
                     </thead>
                     <tbody id="kvTableBody"></tbody>
-                \`;
+                `;
                 
                 document.getElementById('kvValues').appendChild(table);
                 
                 // Fetch and display each KV value
                 const tbody = document.getElementById('kvTableBody');
                 for (const key of data.data) {
-                    const valueResponse = await fetch(\`/admin/api/kv/\${key.name}\`);
+                    const valueResponse = await fetch(`/admin/api/kv/${key.name}`);
                     const valueData = await valueResponse.json();
                     
                     const tr = document.createElement('tr');
-                    tr.innerHTML = \`
-                        <td>\${key.name}</td>
-                        <td class="value-cell">\${valueData.data.value}</td>
+                    tr.innerHTML = `
+                        <td>${key.name}</td>
+                        <td class="value-cell">${valueData.data.value}</td>
                         <td>
-                            <button onclick="editValue('\${key.name}')">Edit</button>
+                            <button onclick="editValue('${key.name}')">Edit</button>
                         </td>
-                    \`;
+                    `;
                     tbody.appendChild(tr);
                 }
             }
@@ -156,7 +135,7 @@ const adminHtml = `<!DOCTYPE html>
             const newValue = prompt('Enter new value:');
             if (newValue !== null) {
                 try {
-                    const response = await fetch(\`/admin/api/kv/\${key}\`, {
+                    const response = await fetch(`/admin/api/kv/${key}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ value: newValue })
@@ -182,100 +161,4 @@ const adminHtml = `<!DOCTYPE html>
             });
     </script>
 </body>
-</html>`;
-
-// Handle admin UI requests
-async function handleAdminUI(request: Request): Promise<Response> {
-    return new Response(adminHtml, {
-        headers: { 'Content-Type': 'text/html' }
-    });
-}
-
-// Handle API requests
-async function handleAPI(request: AuthenticatedRequest, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const path = url.pathname.replace('/admin/api', '');
-
-    // Handle CORS preflight requests
-    if (request.method === 'OPTIONS') {
-        return new Response(null, {
-            headers: {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-                'Access-Control-Max-Age': '86400'
-            }
-        });
-    }
-
-    try {
-        // Site Configuration endpoints
-        if (path === '/sites') {
-            return handleListSites(request, env);
-        }
-
-        if (path.match(/^\/config\/[^\/]+$/)) {
-            const siteId = path.split('/').pop()!;
-            
-            switch (request.method) {
-                case 'GET':
-                    return handleGetSiteConfig(request, env, siteId);
-                case 'PUT':
-                    return handleUpdateSiteConfig(request, env, siteId);
-                case 'POST':
-                    return handleCreateSiteConfig(request, env, siteId);
-                default:
-                    return errorResponse('Method not allowed', 405);
-            }
-        }
-
-        // KV Management endpoints
-        if (path === '/kv/list') {
-            return handleListKeys(request, env);
-        }
-
-        if (path === '/kv/bulk') {
-            if (request.method === 'PUT') {
-                return handleBulkUpdate(request, env);
-            }
-            return errorResponse('Method not allowed', 405);
-        }
-
-        if (path.match(/^\/kv\/[^\/]+$/)) {
-            const key = path.split('/').pop()!;
-            
-            switch (request.method) {
-                case 'GET':
-                    return handleGetValue(request, env, key);
-                case 'PUT':
-                    return handleUpdateValue(request, env, key);
-                case 'DELETE':
-                    return handleDeleteValue(request, env, key);
-                default:
-                    return errorResponse('Method not allowed', 405);
-            }
-        }
-
-        return errorResponse('Not Found', 404);
-    } catch (error) {
-        console.error('API Error:', error);
-        return errorResponse('Internal Server Error', 500);
-    }
-}
-
-// Main admin request handler
-export async function handleAdminRequest(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    
-    // Handle API requests
-    if (url.pathname.startsWith('/admin/api/')) {
-        return handleAPI(request as AuthenticatedRequest, env);
-    }
-    
-    // Handle UI requests
-    if (url.pathname === '/admin' || url.pathname === '/admin/') {
-        return handleAdminUI(request);
-    }
-
-    return new Response('Not Found', { status: 404 });
-}
+</html>
