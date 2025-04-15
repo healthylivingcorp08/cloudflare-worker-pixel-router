@@ -89,7 +89,8 @@ function filterTable() {
 // Load KV entries and setup filter
 async function loadKVEntriesAndSetup() {
     try {
-        const response = await authFetch('/admin/api/kv/list'); // Fetch the wrapped response
+        // Add siteId=site1 to the API call for testing
+        const response = await authFetch('/admin/api/kv/list?siteId=site1'); // Fetch the wrapped response for site1
         allKVEntries = response.data || []; // Extract the data array, default to empty array if missing
         renderTable(allKVEntries); // Initial render
 
