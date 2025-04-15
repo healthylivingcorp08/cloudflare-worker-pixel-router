@@ -15,29 +15,88 @@ import {
   handleBulkUpdate
 } from './api/kv';
 
-// Simplified Login page HTML for testing
+// Enhanced Login page HTML
 const loginHtml = `<!DOCTYPE html>
 <html>
 <head>
     <title>Login - Pixel Router Admin</title>
-    <style> body { font-family: sans-serif; padding: 20px; } </style>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f8fafc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .login-container {
+            background: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        .login-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: #1e293b;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #334155;
+        }
+        input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.25rem;
+            font-size: 1rem;
+        }
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 0.25rem;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 1rem;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        .error {
+            color: #ef4444;
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+        }
+    </style>
 </head>
 <body>
-    <h1>Admin Login</h1>
-    <form id="loginForm">
-        <div>
-            <label for="username">Username:</label>
-            <input type="text" id="username" name="username" required>
-        </div>
-        <br>
-        <div>
-            <label for="password">Password:</label>
-            <input type="password" id="password" name="password" required>
-        </div>
-        <br>
-        <button type="submit">Login</button>
-        <div id="error" style="color: red; margin-top: 10px;"></div>
-    </form>
+    <div class="login-container">
+        <h1 class="login-title">Admin Login</h1>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit">Login</button>
+            <div id="error" class="error"></div>
+        </form>
+    </div>
     <script>
         // Clear any existing token on load
         localStorage.removeItem('adminToken');
@@ -72,18 +131,101 @@ const loginHtml = `<!DOCTYPE html>
 </body>
 </html>`;
 
-// Admin UI HTML (previous content remains the same...)
+// Admin UI with KV editing functionality
 const adminHtml = `<!DOCTYPE html>
 <html>
 <head>
     <title>Admin Dashboard</title>
-    <style> body { font-family: sans-serif; padding: 20px; } </style>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f8fafc;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        .title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .logout-btn {
+            padding: 0.5rem 1rem;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 0.25rem;
+            cursor: pointer;
+        }
+        .kv-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .kv-table th, .kv-table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .kv-table th {
+            background: #f1f5f9;
+            font-weight: 500;
+            color: #334155;
+        }
+        .action-btn {
+            padding: 0.25rem 0.5rem;
+            margin-right: 0.5rem;
+            border-radius: 0.25rem;
+            cursor: pointer;
+        }
+        .edit-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+        }
+        .delete-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+        }
+    </style>
 </head>
 <body>
-    <h1>Admin Dashboard</h1>
-    <p>Welcome! You are logged in.</p>
-    <p>Admin functionality will be added here.</p>
-    <button onclick="localStorage.removeItem('adminToken'); window.location.href='/admin/login';">Logout</button>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">Admin Dashboard</h1>
+            <button class="logout-btn" onclick="localStorage.removeItem('adminToken'); window.location.href='/admin/login';">Logout</button>
+        </div>
+        
+        <h2>KV Store Editor</h2>
+        <table class="kv-table">
+            <thead>
+                <tr>
+                    <th>Key</th>
+                    <th>Value</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="kv-entries">
+                <!-- KV entries will be loaded here via JavaScript -->
+            </tbody>
+        </table>
+
+        <script src="/admin/ui/admin.js"></script>
+    </div>
 </body>
 </html>`;
 

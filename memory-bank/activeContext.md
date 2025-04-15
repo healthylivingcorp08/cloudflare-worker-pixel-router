@@ -13,7 +13,7 @@
 - Added multi-computer support to Memory Bank with automatic path detection.
 
 ## Open Questions/Issues
-- None at this time.
+- Admin login URL: https://cloudflare-worker-pixel-router.healthylivingcorp08.workers.dev/admin/login
 
 ---
 [2025-04-13 21:15:06] - Initial active context created.
