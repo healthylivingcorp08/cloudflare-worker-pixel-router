@@ -7,3 +7,4 @@
 
 [2025-04-14 18:14:00] - Paused work on Phase 2 (Admin UI). Current status: Deployed a simplified login page to `/admin/login` for debugging. Awaiting user verification of login functionality.
 [2025-04-14 20:39:00] - Fixed the blank admin dashboard page by replacing the placeholder HTML in `src/admin/router.ts`. Next step is to deploy and re-test the login flow.
+[2025-04-14 20:54:00] - Modified `.github/workflows/deploy.yml` to fix deployment by removing the explicit `command` parameter, allowing Wrangler to use the build configuration from `wrangler.toml`.
