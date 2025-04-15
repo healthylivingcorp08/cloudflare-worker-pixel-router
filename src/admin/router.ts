@@ -18,76 +18,25 @@ import {
   handleBulkUpdate
 } from './api/kv';
 
-// Read the admin UI HTML
-const adminHtml = `<!DOCTYPE html>
+// Handle admin UI requests
+async function handleAdminUI(request: Request): Promise<Response> {
+    console.log('Serving admin UI');
+    return new Response(`<!DOCTYPE html>
 <html>
 <head>
     <title>Pixel Router Admin</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        .header {
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        .card {
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        h1, h2 {
-            color: #333;
-            margin-top: 0;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th, td {
-            text-align: left;
-            padding: 12px;
-            border-bottom: 1px solid #ddd;
-        }
-        th {
-            background-color: #f8f9fa;
-        }
-        .value-cell {
-            font-family: monospace;
-            background: #f8f9fa;
-            padding: 4px 8px;
-            border-radius: 4px;
-        }
-        button {
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover {
-            background: #0056b3;
-        }
-        .loading {
-            display: none;
-            text-align: center;
-            padding: 20px;
-        }
+        body { font-family: -apple-system, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .card { background: #fff; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #ddd; }
+        button { background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
     </style>
 </head>
 <body>
-    <div class="header">
+    <div class="card">
         <h1>Pixel Router Admin</h1>
+        <p>Loading configuration...</p>
     </div>
 
     <div class="card">
@@ -100,93 +49,66 @@ const adminHtml = `<!DOCTYPE html>
         <div id="kvValues"></div>
     </div>
 
-    <div class="loading" id="loading">Loading...</div>
-
     <script>
-        async function fetchSiteConfig() {
-            const response = await fetch('/admin/api/config/siteA');
-            const data = await response.json();
-            
-            if (data.success) {
-                const pre = document.createElement('pre');
-                pre.textContent = JSON.stringify(data.data, null, 2);
-                document.getElementById('siteConfig').appendChild(pre);
-            }
-        }
-
-        async function fetchKVValues() {
-            const response = await fetch('/admin/api/kv/list');
-            const data = await response.json();
-            
-            if (data.success) {
-                const table = document.createElement('table');
-                table.innerHTML = \`
-                    <thead>
-                        <tr>
-                            <th>Key</th>
-                            <th>Value</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="kvTableBody"></tbody>
-                \`;
-                
-                document.getElementById('kvValues').appendChild(table);
-                
-                // Fetch and display each KV value
-                const tbody = document.getElementById('kvTableBody');
-                for (const key of data.data) {
-                    const valueResponse = await fetch(\`/admin/api/kv/\${key.name}\`);
-                    const valueData = await valueResponse.json();
-                    
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = \`
-                        <td>\${key.name}</td>
-                        <td class="value-cell">\${valueData.data.value}</td>
-                        <td>
-                            <button onclick="editValue('\${key.name}')">Edit</button>
-                        </td>
-                    \`;
-                    tbody.appendChild(tr);
+        // Fetch and display site config
+        fetch('/admin/api/config/siteA')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const pre = document.createElement('pre');
+                    pre.textContent = JSON.stringify(data.data, null, 2);
+                    document.getElementById('siteConfig').appendChild(pre);
                 }
-            }
-        }
+            });
 
+        // Fetch and display KV values
+        fetch('/admin/api/kv/list')
+            .then(response => response.json())
+            .then(async data => {
+                if (data.success) {
+                    const table = document.createElement('table');
+                    table.innerHTML = '<tr><th>Key</th><th>Value</th><th>Actions</th></tr>';
+                    const tbody = document.createElement('tbody');
+                    
+                    for (const key of data.data) {
+                        const valueResponse = await fetch(\`/admin/api/kv/\${key.name}\`);
+                        const valueData = await valueResponse.json();
+                        
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = \`
+                            <td>\${key.name}</td>
+                            <td><code>\${valueData.data.value}</code></td>
+                            <td><button onclick="editValue('\${key.name}')">Edit</button></td>
+                        \`;
+                        tbody.appendChild(tr);
+                    }
+                    
+                    table.appendChild(tbody);
+                    document.getElementById('kvValues').appendChild(table);
+                }
+            });
+
+        // Function to edit KV values
         async function editValue(key) {
             const newValue = prompt('Enter new value:');
             if (newValue !== null) {
-                try {
-                    const response = await fetch(\`/admin/api/kv/\${key}\`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ value: newValue })
-                    });
-                    const data = await response.json();
-                    if (data.success) {
-                        alert('Value updated successfully!');
-                        location.reload();
-                    } else {
-                        alert('Failed to update value: ' + data.error);
-                    }
-                } catch (error) {
-                    alert('Error updating value: ' + error);
+                const response = await fetch(\`/admin/api/kv/\${key}\`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: newValue })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert('Value updated successfully!');
+                    location.reload();
+                } else {
+                    alert('Failed to update value: ' + data.error);
                 }
             }
         }
-
-        // Load data when page loads
-        document.getElementById('loading').style.display = 'block';
-        Promise.all([fetchSiteConfig(), fetchKVValues()])
-            .finally(() => {
-                document.getElementById('loading').style.display = 'none';
-            });
     </script>
 </body>
-</html>`;
-
-// Handle admin UI requests
-async function handleAdminUI(request: Request): Promise<Response> {
-    return new Response(adminHtml, {
+</html>`, {
         headers: { 'Content-Type': 'text/html' }
     });
 }
@@ -195,6 +117,8 @@ async function handleAdminUI(request: Request): Promise<Response> {
 async function handleAPI(request: AuthenticatedRequest, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname.replace('/admin/api', '');
+
+    console.log('Handling API request:', path);
 
     // Handle CORS preflight requests
     if (request.method === 'OPTIONS') {
@@ -266,6 +190,7 @@ async function handleAPI(request: AuthenticatedRequest, env: Env): Promise<Respo
 // Main admin request handler
 export async function handleAdminRequest(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    console.log('Admin Request:', url.pathname);
     
     // Handle API requests
     if (url.pathname.startsWith('/admin/api/')) {
@@ -273,9 +198,5 @@ export async function handleAdminRequest(request: Request, env: Env): Promise<Re
     }
     
     // Handle UI requests
-    if (url.pathname === '/admin' || url.pathname === '/admin/') {
-        return handleAdminUI(request);
-    }
-
-    return new Response('Not Found', { status: 404 });
+    return handleAdminUI(request);
 }
