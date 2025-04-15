@@ -42,11 +42,15 @@ export function hasPermission(role: UserRole, permission: string): boolean {
  */
 export function verifyAuthToken(token: string): boolean {
   try {
+    console.log('[Auth] Verifying token:', token);
     const [username, timestamp] = atob(token).split(':');
     const tokenAge = Date.now() - parseInt(timestamp);
     // Token valid for 24 hours
-    return tokenAge < 24 * 60 * 60 * 1000;
-  } catch {
+    const isValid = tokenAge < 24 * 60 * 60 * 1000;
+    console.log('[Auth] Token age:', tokenAge, 'isValid:', isValid);
+    return isValid;
+  } catch (error) {
+    console.error('[Auth] Token verification error:', error);
     return false;
   }
 }
@@ -75,10 +79,15 @@ export async function authenticateRequest(request: Request, env: Env): Promise<A
   if (pathname.startsWith('/admin/api/') && !isPublicPath(pathname)) {
     console.log('[Auth] Protected API path, checking token');
 
-    // Get the token from Authorization header
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      console.log('[Auth] No bearer token found for API');
+    // Get the token from Authorization header or query param (for testing)
+    let token = request.headers.get('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      const url = new URL(request.url);
+      token = url.searchParams.get('token') || undefined;
+    }
+
+    if (!token) {
+      console.log('[Auth] No token found (checked header and query param)');
       return new Response('Authentication required', {
         status: 401,
         headers: {
@@ -91,12 +100,12 @@ export async function authenticateRequest(request: Request, env: Env): Promise<A
       });
     }
 
-    const token = authHeader.replace('Bearer ', '');
     if (!verifyAuthToken(token)) {
       console.log('[Auth] Invalid or expired token for API');
       return new Response('Invalid or expired token', {
         status: 401,
         headers: {
+          'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
           'Access-Control-Allow-Headers': 'Content-Type, Authorization'
