@@ -1,0 +1,11 @@
+{
+  "type": "everflowConversion",
+  "scriptSrc": "https://www.c6orlterk.com/scripts/sdk/everflow.js",
+  "params": {
+    "offer_id": "VALUE:YOUR_OFFER_ID",
+    "affiliate_id": "CONTEXT:affid",
+    "transaction_id": "CONTEXT:clickid",
+    "amount": "CONTEXT:total",
+    "adv1": "CONTEXT:affid"
+  }
+}

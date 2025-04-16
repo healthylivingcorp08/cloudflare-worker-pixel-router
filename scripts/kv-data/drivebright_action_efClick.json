@@ -1,0 +1,16 @@
+{
+  "type": "everflowClick",
+  "scriptSrc": "https://www.c6orlterk.com/scripts/sdk/everflow.js",
+  "params": {
+    "offer_id": "PARAM:c2",
+    "affiliate_id": "PARAM:c1",
+    "sub1": "PARAM:sub1",
+    "sub2": "PARAM:sub2",
+    "sub3": "PARAM:sub3",
+    "sub4": "PARAM:sub4",
+    "sub5": "PARAM:sub5",
+    "uid": "PARAM:uid",
+    "source_id": "PARAM:source_id",
+    "transaction_id": "PARAM:_ef_transaction_id"
+  }
+}

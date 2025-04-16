@@ -1,0 +1,4 @@
+[
+  { "affId": "nva", "actions": ["drivebright_action_efClick"] },
+  { "affId": "default", "actions": [] }
+]

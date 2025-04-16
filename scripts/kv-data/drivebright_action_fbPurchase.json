@@ -1,0 +1,4 @@
+{
+  "type": "imagePixel",
+  "template": "https://www.facebook.com/tr?id=YOUR_FB_PIXEL_ID&ev=Purchase&noscript=1&value={TOTAL}&currency=USD"
+}

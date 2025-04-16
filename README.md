@@ -84,8 +84,8 @@ Sites are configured in `config/sites/` with individual JSON files per site:
 Frequently changing values (offer IDs, campaign IDs, etc.) are stored in Cloudflare KV:
 
 ```bash
-# Update a value
-npx wrangler kv:key put --binding=PIXEL_CONFIG siteA_checkout_offer_id "746"
+# Update a value (Note: Use `kv key put` syntax)
+npx wrangler kv key put siteA_checkout_offer_id "746" --binding PIXEL_CONFIG --local
 ```
 
 ## Admin Interface
@@ -119,3 +119,70 @@ GET    /admin/api/kv/:key
 PUT    /admin/api/kv/:key
 DELETE /admin/api/kv/:key
 PUT    /admin/api/kv/bulk
+
+### `/api/page-pixels` Endpoint (KV-Driven Logic)
+
+This endpoint determines which pixels/actions should be executed on a given frontend page load based on rules stored in KV.
+
+**Request (POST):**
+
+```json
+{
+ "siteId": "drivebright",
+ "url": "http://localhost:3000/inter/testpage/?affId=nva&c1=123&c2=CAMP_TEST&ef_transaction_id=ABCDEF12345",
+ "affid": "nva", // Network ID (from affId URL param)
+ "c1": "123", // Affiliate ID (from c1 URL param)
+ "campid": "CAMP_TEST", // Campaign ID (from c2 URL param)
+ "ef_transaction_id": "ABCDEF12345" // Pre-existing Transaction ID (from ef_transaction_id URL param)
+ // ... other context params as needed
+}
+```
+
+**Response (POST):**
+
+```json
+{
+ "actionsToExecute": [
+   {
+     "type": "everflowClick",
+     "scriptSrc": "https://www.c6orlterk.com/scripts/sdk/everflow.js",
+     "params": {
+       "offer_id": "CAMP_TEST", // Replaced from PARAM:c2
+       "affiliate_id": "123", // Replaced from PARAM:c1
+       "sub1": "", // Replaced from PARAM:sub1 (defaulted to '')
+       // ... other params replaced ...
+       "transaction_id": "ABCDEF12345" // Replaced from PARAM:_ef_transaction_id
+     }
+   }
+   // ... other actions
+ ]
+}
+```
+
+**Logic Flow:**
+
+1.  **Fetch Page Rules:** Gets rules from KV key `${siteId}_rule_pageRules`.
+   *   Example Value: `[ { "pattern": "/inter", "type": "interstitial" }, ... ]`
+2.  **Determine Page Type:** Matches the `url` pathname from the request against `pattern` to find the `pageType`.
+3.  **Fetch Affiliate Rules:** Gets rules from KV key `${siteId}_rule_${pageType}AffIdRules` (e.g., `drivebright_rule_interstitialAffIdRules`).
+   *   Example Value: `[ { "affId": "nva", "actions": ["drivebright_action_efClick"] }, { "affId": "default", "actions": [] } ]`
+4.  **Match Affiliate Rule:** Finds the rule matching the `affid` (Network ID) from the request. Falls back to `default` if no specific match.
+5.  **Get Action Keys:** Extracts the list of action keys (e.g., `["drivebright_action_efClick"]`) from the matched rule.
+6.  **Fetch Action Definitions:** Gets full action definitions from KV for each key (e.g., key `drivebright_action_efClick`).
+   *   Example Value: `{ "type": "everflowClick", "params": { "offer_id": "PARAM:c2", "affiliate_id": "PARAM:c1", ... } }`
+7.  **Replace Parameters:** Iterates through the `params` object of each fetched action definition.
+   *   If a value starts with `PARAM:`, it extracts the source parameter name (e.g., `c1`, `c2`, `_ef_transaction_id`).
+   *   It looks up the corresponding value in the incoming request body (`body.c1`, `body.campid`, `body.ef_transaction_id`, etc.).
+   *   It replaces the `PARAM:...` string with the found value (or `''` if the value is missing/null in the request body).
+8.  **Return Actions:** Sends the array of processed action definitions (with parameters replaced) back to the frontend.
+
+**KV Structure for Rules/Actions:**
+
+*   `${siteId}_rule_pageRules`: Array of `{ pattern: string, type: string }`
+*   `${siteId}_rule_${pageType}AffIdRules`: Array of `{ affId: string, actions: string[] }`
+*   `${siteId}_action_${actionName}`: JSON object defining the action (type, scriptSrc, params with `PARAM:` placeholders).
+*   *(Potentially others for checkout, campaign IDs, etc.)*
+
+**Local KV Population:**
+
+*   Use the `scripts/populate-local-kv.sh` script to load example data into your local KV for testing. Ensure the `wrangler kv key put` commands in the script use the correct syntax.

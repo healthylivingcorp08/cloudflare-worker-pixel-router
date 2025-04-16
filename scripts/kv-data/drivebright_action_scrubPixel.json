@@ -1,0 +1,4 @@
+{
+  "type": "imagePixel",
+  "template": "https://scrub.example.com/pixel?site=drivebright&txid={CLICK_ID}"
+}

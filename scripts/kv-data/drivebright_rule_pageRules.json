@@ -1,0 +1,5 @@
+[
+  { "pattern": "/checkout/thank-you", "type": "checkout" },
+  { "pattern": "/pre", "type": "presell" },
+  { "pattern": "/inter", "type": "interstitial" }
+]
