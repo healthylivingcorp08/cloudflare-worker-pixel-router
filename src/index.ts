@@ -163,10 +163,24 @@ export default {
        try {
          // 1. Fetch Page Rules from KV
          const pageRulesKey = `${siteId}_rule_pageRules`;
-         console.log(`[Worker] Fetching page rules from KV key: ${pageRulesKey}`); // DEBUG LOG
-         const pageRulesJson = await env.PIXEL_CONFIG.get(pageRulesKey);
-         const pageRules: { pattern: string; type: string }[] = pageRulesJson ? JSON.parse(pageRulesJson) : [];
-         console.log('[Worker] Fetched pageRules:', pageRulesJson ? pageRules : 'Not Found or Invalid JSON'); // DEBUG LOG
+         console.log(`[Worker] Attempting to fetch page rules from KV key: ${pageRulesKey}`); // DETAILED LOG 1
+         const pageRulesRawValue = await env.PIXEL_CONFIG.get(pageRulesKey);
+         console.log(`[Worker] Raw value received from KV for ${pageRulesKey}:`, pageRulesRawValue); // DETAILED LOG 2
+         let pageRules: { pattern: string; type: string }[] = [];
+         let parseError: Error | null = null;
+         if (pageRulesRawValue) {
+           try {
+             pageRules = JSON.parse(pageRulesRawValue);
+             console.log(`[Worker] Successfully parsed pageRules for ${pageRulesKey}:`, pageRules); // DETAILED LOG 3
+           } catch (e: any) {
+             parseError = e;
+             console.error(`[Worker] JSON PARSE ERROR for ${pageRulesKey}:`, e.message, "Raw value:", pageRulesRawValue); // DETAILED LOG 4
+           }
+         } else {
+            console.warn(`[Worker] Key ${pageRulesKey} NOT FOUND in KV.`); // DETAILED LOG 5
+         }
+         // Original log replaced by more detailed ones above
+         // console.log('[Worker] Fetched pageRules:', pageRulesJson ? pageRules : 'Not Found or Invalid JSON');
 
          // 2. Determine Page Type
          let pageType = 'unknown';
