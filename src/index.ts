@@ -15,7 +15,11 @@ function isAdminPublicPath(pathname: string): boolean {
 
 // --- CORS Configuration ---
 // Adjust allowedOrigins for your production frontend URL
-const allowedOrigins = ['http://localhost:3000', 'http://127.0.0.1:3000']; // Add production URL later
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://space-7z6.pages.dev' // Added production frontend origin
+];
 
 function handleOptions(request: Request) {
   const origin = request.headers.get('Origin');
