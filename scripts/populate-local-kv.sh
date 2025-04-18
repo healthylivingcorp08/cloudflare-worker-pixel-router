@@ -20,7 +20,7 @@ npx wrangler kv key put drivebright_rule_pageRules --path "${KV_DATA_DIR}/driveb
 # Action Definitions
 npx wrangler kv key put drivebright_action_efClick --path "${KV_DATA_DIR}/drivebright_action_efClick.json" --binding PIXEL_CONFIG --local
 npx wrangler kv key put drivebright_action_efConversion --path "${KV_DATA_DIR}/drivebright_action_efConversion.json" --binding PIXEL_CONFIG --local
-# npx wrangler kv key put drivebright_action_fbPurchase --path "${KV_DATA_DIR}/drivebright_action_fbPurchase.json" --binding PIXEL_CONFIG --local
+npx wrangler kv key put drivebright_action_fbPurchase --path "${KV_DATA_DIR}/drivebright_action_fbPurchase.json" --binding PIXEL_CONFIG --local
 npx wrangler kv key put drivebright_action_scrubPixel --path "${KV_DATA_DIR}/drivebright_action_scrubPixel.json" --binding PIXEL_CONFIG --local
 
 # Rule Actions

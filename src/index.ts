@@ -1,7 +1,57 @@
 import { Env } from './types';
+
+interface PaymentData {
+  cardType?: string;
+  encryptedCard?: string;
+  encryptedExpiry?: string;
+  encryptedCvv?: string;
+}
+
+interface StickyPayload {
+  firstName?: string;
+  lastName?: string;
+  billingFirstName?: string;
+  billingLastName?: string;
+  billingAddress1?: string;
+  billingAddress2?: string;
+  billingCity?: string;
+  billingState?: string;
+  billingZip?: string;
+  billingCountry?: string;
+  phone?: string;
+  email?: string;
+  payment?: PaymentData;
+  shippingId?: string;
+  shippingAddress1?: string;
+  shippingAddress2?: string;
+  shippingCity?: string;
+  shippingState?: string;
+  shippingZip?: string;
+  shippingCountry?: string;
+  billingSameAsShipping?: string;
+  tranType?: string;
+  ipAddress?: string;
+  campaignId?: string;
+  offers?: any[];
+  AFID?: string;
+  SID?: string;
+  AFFID?: string;
+  C1?: string;
+  C2?: string;
+  C3?: string;
+  AID?: string;
+  OPT?: string;
+  click_id?: string;
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  utm_term?: string;
+}
 import { handleRequest } from './handler';
 import { handleAdminRequest } from './admin/router';
 import { authenticateRequest } from './admin/middleware/auth';
+import { decryptData } from './utils/encryption';
 
 // Helper function to check if a path is public within the admin scope
 function isAdminPublicPath(pathname: string): boolean {
@@ -83,27 +133,43 @@ export default {
       // Let Wrangler serve all other static assets (including /admin/ui/*)
 
       // Handle CORS preflight requests for API routes
-      if (request.method === 'OPTIONS' && (pathname === '/api/process-checkout' || pathname === '/api/page-pixels')) {
+      // Added /api/checkout and renamed /api/process-checkout to /api/checkout-rules
+      if (request.method === 'OPTIONS' && (pathname === '/api/checkout' || pathname === '/api/checkout-rules' || pathname === '/api/page-pixels')) {
         return handleOptions(request);
       }
 
-      // Handle POST request for checkout processing
-      else if (pathname === '/api/process-checkout' && request.method === 'POST') {
+      // Handle POST request for determining checkout rules/actions (based on scrub)
+      else if (pathname === '/api/checkout-rules' && request.method === 'POST') {
         try {
           const body = await request.json();
-          const { siteId, campid, affid, clickid, total } = body as any; // Type assertion for simplicity
+          // Removed unused vars for this specific endpoint's logic
+          const { siteId } = body as any; // Type assertion for simplicity
 
           if (!siteId) {
             return new Response('Missing siteId in request body', { status: 400 });
           }
 
-          console.log(`[Worker] Processing checkout for siteId: ${siteId}`, body);
+          console.log(`[Worker] Determining checkout rules for siteId: ${siteId}`, body);
 
-          // --- Placeholder Logic ---
-          // 1. Fetch scrubPercent, action keys, action definitions from KV based on siteId
-          const scrubPercent = parseInt(await env.PIXEL_CONFIG.get(`${siteId}_rule_checkoutScrubPercent`) || '0');
-          const normalActionKeys = JSON.parse(await env.PIXEL_CONFIG.get(`${siteId}_rule_checkoutNormalActions`) || '[]');
-          const scrubActionKeys = JSON.parse(await env.PIXEL_CONFIG.get(`${siteId}_rule_checkoutScrubAction`) || '[]');
+          // --- Checkout Rules Logic ---
+          // 1. Fetch scrubPercent and action keys from KV based on siteId
+          const scrubPercentKey = `${siteId}_rule_checkoutScrubPercent`;
+          const normalActionsKey = `${siteId}_rule_checkoutNormalActions`;
+          const scrubActionKey = `${siteId}_rule_checkoutScrubAction`; // Note: singular based on user's open tabs
+
+          console.log(`[Worker] Fetching KV: ${scrubPercentKey}, ${normalActionsKey}, ${scrubActionKey}`);
+
+          const [scrubPercentValue, normalActionKeysValue, scrubActionKeyValue] = await Promise.all([
+             env.PIXEL_CONFIG.get(scrubPercentKey),
+             env.PIXEL_CONFIG.get(normalActionsKey),
+             env.PIXEL_CONFIG.get(scrubActionKey)
+          ]);
+
+          const scrubPercent = parseInt(scrubPercentValue || '0');
+          const normalActionKeys = JSON.parse(normalActionKeysValue || '[]');
+          // Assuming scrub action is a single key, not an array based on KV filename `drivebright_rule_checkoutScrubAction.json`
+          // If it *can* be multiple, adjust parsing and KV data.
+          const scrubActionKeys = scrubActionKeyValue ? [scrubActionKeyValue] : []; // Wrap in array if found
 
           // 2. Perform scrub calculation
           const isScrub = Math.random() * 100 < scrubPercent;
@@ -117,14 +183,17 @@ export default {
              if (actionJson) {
                try {
                  const actionDefinition = JSON.parse(actionJson);
-                 // TODO: Fill CONTEXT placeholders (like clickid, total) if needed
+                 // Parameter replacement will happen in the main /api/checkout endpoint
+                 // after the Sticky.io call. Here we just return the raw definitions.
                  actionsToExecute.push(actionDefinition);
-               } catch (e) { console.error(`[Worker] Failed to parse action definition for key ${key}`, e); }
+               } catch (e) {
+                  console.error(`[Worker] Failed to parse action definition for key ${key}: ${e instanceof Error ? e.message : String(e)}`, actionJson);
+                }
              } else {
-               console.warn(`[Worker] Action definition not found for key ${key}`);
+               console.warn(`[Worker] Action definition not found in KV for key ${key}`);
              }
           }
-          // --- End Placeholder Logic ---
+         // --- End Checkout Rules Logic ---
 
           const responsePayload = {
             decision: decision,
@@ -138,13 +207,287 @@ export default {
           return addCorsHeaders(response, request); // Add CORS headers
 
         } catch (error: any) {
+          console.error('[Worker] Error determining checkout rules:', error);
+          return new Response(`Error determining checkout rules: ${error.message}`, { status: 500 });
+        }
+      }
+
+      // Handle POST request for the full checkout process
+      else if (pathname === '/api/checkout' && request.method === 'POST') {
+        try {
+          const checkoutData = await request.json() as any; // Type assertion for simplicity
+          const { siteId } = checkoutData;
+
+          if (!siteId) {
+            return new Response('Missing siteId in request body', { status: 400 });
+          }
+
+          console.log(`[Worker] Starting checkout process for siteId: ${siteId}`, checkoutData);
+
+          // --- 1. Call Sticky.io New Order API ---
+          let stickyOrderId: string | null = null;
+          let stickyResponseData: any = null;
+          try {
+            // Get Sticky.io credentials from Worker Secrets
+            const stickyApiUrl = env.STICKY_API_URL;
+            const stickyApiUser = env.STICKY_USERNAME; // Production secret name
+            const stickyApiPass = env.STICKY_PASSWORD; // Production secret name
+
+            if (!stickyApiUrl || !stickyApiUser || !stickyApiPass) {
+              console.error('[Worker] Sticky.io API credentials missing in environment secrets.');
+              throw new Error('Sticky.io API credentials missing');
+            }
+
+            // Construct the Sticky.io New Order payload
+            // Assuming checkoutData contains nested objects like 'customer', 'shipping', 'billing', 'payment', 'analytics', 'offers'
+            const stickyPayload = {
+              firstName: checkoutData.customer?.firstName,
+              lastName: checkoutData.customer?.lastName,
+              billingFirstName: checkoutData.billing?.firstName || checkoutData.customer?.firstName, // Use billing or fallback to customer
+              billingLastName: checkoutData.billing?.lastName || checkoutData.customer?.lastName,
+              billingAddress1: checkoutData.billing?.address1,
+              billingAddress2: checkoutData.billing?.address2,
+              billingCity: checkoutData.billing?.city,
+              billingState: checkoutData.billing?.state,
+              billingZip: checkoutData.billing?.zip,
+              billingCountry: checkoutData.billing?.country,
+              phone: checkoutData.customer?.phone,
+              email: checkoutData.customer?.email,
+              // --- Payment Details ---
+              // Assuming raw card details are passed in checkoutData.payment based on example
+              // If using Braintree nonce, adjust this section accordingly
+              creditCardType: checkoutData.payment?.cardType, // e.g., VISA
+              creditCardNumber: checkoutData.payment?.encryptedCard ? await decryptData(checkoutData.payment.encryptedCard, env).catch((e: Error) => {
+                console.error('Failed to decrypt card number:', e.message);
+                throw new Error('Payment processing failed - invalid card data');
+              }) : undefined,
+              expirationDate: checkoutData.payment?.encryptedExpiry ? await decryptData(checkoutData.payment.encryptedExpiry, env).catch((e: Error) => {
+                console.error('Failed to decrypt expiration date:', e.message);
+                throw new Error('Payment processing failed - invalid expiration data');
+              }) : undefined,
+              CVV: checkoutData.payment?.encryptedCvv ? await decryptData(checkoutData.payment.encryptedCvv, env).catch((e: Error) => {
+                console.error('Failed to decrypt CVV:', e.message);
+                throw new Error('Payment processing failed - invalid security code');
+              }) : undefined,
+              // --- Shipping Details ---
+              shippingId: checkoutData.shipping?.shippingId || '2', // Default or from data
+              shippingAddress1: checkoutData.shipping?.address1,
+              shippingAddress2: checkoutData.shipping?.address2,
+              shippingCity: checkoutData.shipping?.city,
+              shippingState: checkoutData.shipping?.state,
+              shippingZip: checkoutData.shipping?.zip,
+              shippingCountry: checkoutData.shipping?.country,
+              billingSameAsShipping: checkoutData.billing?.sameAsShipping ? 'YES' : 'NO',
+              // --- Transaction & Offer ---
+              tranType: 'Sale',
+              ipAddress: request.headers.get('CF-Connecting-IP') || '', // Get IP from Cloudflare header
+              campaignId: checkoutData.analytics?.campaignId, // From analytics object
+              offers: checkoutData.offers, // Assuming offers array is passed directly
+              // Example structure for offers:
+              // [ { offer_id: "8", product_id: "4", billing_model_id: "6", quantity: "1" } ]
+              // --- Tracking ---
+              AFID: checkoutData.analytics?.afid,
+              SID: checkoutData.analytics?.sid,
+              AFFID: checkoutData.analytics?.affId, // Network ID
+              C1: checkoutData.analytics?.c1,     // Affiliate ID
+              C2: checkoutData.analytics?.c2,     // Campaign ID (redundant?)
+              C3: checkoutData.analytics?.c3,
+              AID: checkoutData.analytics?.aid,
+              OPT: checkoutData.analytics?.opt,
+              click_id: checkoutData.analytics?.clickId,
+              // --- UTM ---
+              utm_source: checkoutData.analytics?.utm_source,
+              utm_medium: checkoutData.analytics?.utm_medium,
+              utm_campaign: checkoutData.analytics?.utm_campaign,
+              utm_content: checkoutData.analytics?.utm_content,
+              utm_term: checkoutData.analytics?.utm_term,
+              // Add other fields from example if needed (notes, sessionId, etc.)
+            };
+            // Securely log payment payload without sensitive data
+            const { creditCardNumber, CVV, expirationDate, ...safePayload } = stickyPayload;
+            console.log('[Worker] Sending payload to Sticky.io:', {
+              ...safePayload,
+              payment: {
+                cardType: stickyPayload.creditCardType,
+                creditCardNumber: '[REDACTED]',
+                expirationDate: '[REDACTED]',
+                CVV: '[REDACTED]'
+              }
+            });
+
+            const stickyResponse = await fetch(stickyApiUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                // Basic Auth using production secret names
+                'Authorization': 'Basic ' + btoa(`${stickyApiUser}:${stickyApiPass}`)
+              },
+              body: JSON.stringify(stickyPayload)
+            });
+
+            stickyResponseData = await stickyResponse.json();
+            console.log('[Worker] Sticky.io Response Status:', stickyResponse.status);
+            console.log('[Worker] Sticky.io Response Body:', JSON.stringify(stickyResponseData));
+
+            if (!stickyResponse.ok || stickyResponseData.response_code !== '100') { // Check Sticky.io success code
+              throw new Error(`Sticky.io API Error: ${stickyResponseData.error_message || 'Unknown error'} (Code: ${stickyResponseData.response_code})`);
+            }
+
+            // Extract the order ID from the Sticky.io response
+            stickyOrderId = stickyResponseData.order_id; // Confirmed from example response
+            if (!stickyOrderId) {
+               throw new Error('Sticky.io response did not contain an order_id.');
+            }
+            console.log(`[Worker] Sticky.io order created successfully. Order ID: ${stickyOrderId}`);
+
+          } catch (stickyError: any) {
+            console.error('[Worker] Error calling Sticky.io API:', stickyError);
+            // Decide how to handle Sticky.io failure - maybe return error, maybe still fire *some* pixels?
+            // For now, return an error.
+            return new Response(`Checkout failed: ${stickyError.message}`, { status: 500 });
+          }
+
+          // --- 2. Determine Actions based on Rules (Scrub/Normal/Campaign) ---
+          // Reuse logic similar to /api/checkout-rules, but potentially add campaign logic
+          const scrubPercentKey = `${siteId}_rule_checkoutScrubPercent`;
+          const normalActionsKey = `${siteId}_rule_checkoutNormalActions`;
+          const scrubActionKey = `${siteId}_rule_checkoutScrubAction`;
+          const campaignRulesKey = `${siteId}_rule_checkoutCampIdRules`; // Key for campaign rules
+
+          console.log(`[Worker] Fetching KV for checkout rules: ${scrubPercentKey}, ${normalActionsKey}, ${scrubActionKey}, ${campaignRulesKey}`);
+
+          const [scrubPercentValue, normalActionKeysValue, scrubActionKeyValue, campaignRulesValue] = await Promise.all([
+             env.PIXEL_CONFIG.get(scrubPercentKey),
+             env.PIXEL_CONFIG.get(normalActionsKey),
+             env.PIXEL_CONFIG.get(scrubActionKey),
+             env.PIXEL_CONFIG.get(campaignRulesKey) // Added missing promise for campaign rules
+          ]);
+
+          const scrubPercent = parseInt(scrubPercentValue || '0');
+          const normalActionKeys = JSON.parse(normalActionKeysValue || '[]');
+          const scrubActionKeys = scrubActionKeyValue ? [scrubActionKeyValue] : [];
+
+          const isScrub = Math.random() * 100 < scrubPercent;
+          const decision = isScrub ? 'scrub' : 'normal';
+          let actionKeysToExecute = isScrub ? scrubActionKeys : normalActionKeys;
+
+          // --- Apply Campaign-Specific Rules ---
+          const requestCampaignId = checkoutData.analytics?.campaignId;
+          if (requestCampaignId && campaignRulesValue) {
+            try {
+              const campaignRules: { campaignId: string; actions?: string[]; replace?: boolean }[] = JSON.parse(campaignRulesValue);
+              const matchingCampaignRule = campaignRules.find(rule => rule.campaignId === requestCampaignId);
+
+              if (matchingCampaignRule && matchingCampaignRule.actions) {
+                console.log(`[Worker] Found matching campaign rule for ${requestCampaignId}:`, matchingCampaignRule);
+                if (matchingCampaignRule.replace) {
+                  console.log(`[Worker] Replacing base actions with campaign actions.`);
+                  actionKeysToExecute = matchingCampaignRule.actions;
+                } else {
+                  console.log(`[Worker] Appending campaign actions to base actions.`);
+                  actionKeysToExecute = [...actionKeysToExecute, ...matchingCampaignRule.actions];
+                  // Optional: Remove duplicates if necessary
+                  // actionKeysToExecute = [...new Set(actionKeysToExecute)];
+                }
+              } else {
+                 console.log(`[Worker] No specific rule found for campaignId ${requestCampaignId} in ${campaignRulesKey}`);
+              }
+            } catch (e) {
+              console.error(`[Worker] Failed to parse or apply campaign rules from ${campaignRulesKey}: ${e instanceof Error ? e.message : String(e)}`, campaignRulesValue);
+            }
+          } else if (requestCampaignId) {
+             console.log(`[Worker] Campaign ID ${requestCampaignId} provided, but no campaign rules found at ${campaignRulesKey}`);
+          }
+          // --- End Campaign Rules ---
+
+
+          // --- 3. Fetch and Process Action Definitions ---
+          const actionsToExecute = [];
+          console.log(`[Worker] Action keys to fetch definitions for (${decision}):`, actionKeysToExecute);
+          for (const key of actionKeysToExecute) {
+             const actionJson = await env.PIXEL_CONFIG.get(key);
+             if (actionJson) {
+               try {
+                 const actionDefinition = JSON.parse(actionJson);
+                 console.log(`[Worker] Fetched action definition for ${key}:`, JSON.stringify(actionDefinition));
+
+                 // --- Parameter Replacement Logic (Checkout Context) ---
+                 if (actionDefinition.params && typeof actionDefinition.params === 'object') {
+                   console.log(`[Worker] Processing parameters for action ${key}`);
+                   for (const paramKey in actionDefinition.params) {
+                     let paramValue = actionDefinition.params[paramKey];
+                     if (typeof paramValue === 'string' && paramValue.startsWith('PARAM:')) {
+                       const sourceParamName = paramValue.substring(6);
+                       let replacementValue: string | number | null = null;
+
+                       // Map known PARAM names to checkoutData or stickyResponseData
+                       // Map known PARAM names to checkoutData or stickyResponseData
+                       // Using optional chaining ?. for safety
+                       if (sourceParamName === 'order_id') {
+                         replacementValue = stickyOrderId;
+                       } else if (sourceParamName === 'total') {
+                         // Assuming total might be in sticky response or checkout data
+                         replacementValue = stickyResponseData?.orderTotal || checkoutData.order?.total;
+                       } else if (sourceParamName === 'email') {
+                          replacementValue = checkoutData.customer?.email;
+                       } else if (sourceParamName === 'c1') { // Affiliate ID
+                         replacementValue = checkoutData.analytics?.c1;
+                       } else if (sourceParamName === 'c2' || sourceParamName === 'campid') { // Campaign ID
+                         replacementValue = checkoutData.analytics?.campaignId;
+                       } else if (sourceParamName === 'affid') { // Network ID
+                          replacementValue = checkoutData.analytics?.affId;
+                       } else if (sourceParamName === 'clickid') {
+                          replacementValue = checkoutData.analytics?.clickId;
+                       } else if (sourceParamName === 'sub1' || sourceParamName === 'AFID') { // Map AFID to sub1 if needed
+                          replacementValue = checkoutData.analytics?.afid;
+                       } else if (sourceParamName === 'sub2' || sourceParamName === 'SID') { // Map SID to sub2 if needed
+                          replacementValue = checkoutData.analytics?.sid;
+                       } else if (sourceParamName === 'sub3' || sourceParamName === 'C3') { // Map C3 to sub3 if needed
+                          replacementValue = checkoutData.analytics?.c3;
+                       } else if (sourceParamName === 'transaction_id') {
+                          // Use Sticky.io transactionID if available, otherwise maybe clickid?
+                          replacementValue = stickyResponseData?.transactionID !== 'Not Available' ? stickyResponseData?.transactionID : checkoutData.analytics?.clickId;
+                       }
+                       // Add other mappings like product IDs, quantities, customer name etc. if required by actions
+                       // else if (sourceParamName === 'product_ids') {
+                       //   replacementValue = checkoutData.offers?.map(o => o.product_id).join(',');
+                       // }
+
+                       actionDefinition.params[paramKey] = replacementValue ?? '';
+                       console.log(`[Worker] --> Replaced ${paramKey}: '${paramValue}' with '${actionDefinition.params[paramKey]}'`);
+                     }
+                   }
+                 }
+                 // --- End Parameter Replacement ---
+
+                 actionsToExecute.push(actionDefinition);
+               } catch (e) { console.error(`[Worker] Failed to parse action definition for key ${key}`, e); }
+             } else {
+               console.warn(`[Worker] Action definition not found in KV for key ${key}`);
+             }
+          }
+
+          // --- 4. Return Response ---
+          const responsePayload = {
+            stickyOrderId: stickyOrderId,
+            decision: decision,
+            actionsToExecute: actionsToExecute
+          };
+
+          const response = new Response(JSON.stringify(responsePayload), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200
+          });
+          return addCorsHeaders(response, request);
+
+        } catch (error: any) {
           console.error('[Worker] Error processing checkout:', error);
           return new Response(`Error processing checkout: ${error.message}`, { status: 500 });
         }
       }
 
-    // Handle POST request for page pixel determination
-    else if (pathname === '/api/page-pixels' && request.method === 'POST') {
+      // Handle POST request for page pixel determination
+      else if (pathname === '/api/page-pixels' && request.method === 'POST') {
       try {
        const body = await request.json();
        // Added c1, ef_transaction_id

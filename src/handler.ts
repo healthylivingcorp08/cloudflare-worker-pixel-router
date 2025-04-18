@@ -93,9 +93,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
     console.error('Request handling failed:', errorMessage);
     
-    // Return a generic error response
-    return new Response('Internal Server Error', {
-      status: 500,
+    // Return appropriate status code based on error type
+    const status = errorMessage.includes('No configuration found') ? 404 : 500;
+    return new Response(errorMessage, {
+      status,
       headers: { 'Content-Type': 'text/plain' }
     });
   }

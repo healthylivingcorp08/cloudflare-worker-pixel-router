@@ -4,7 +4,8 @@ import { SiteConfig, SitesConfig, Env, PageConfig, PixelConfig, ApiEndpointConfi
  * Map of hostnames to site IDs
  */
 const HOST_TO_SITE_MAP: { [hostname: string]: string } = {
-  'getamplihear.com': 'siteA'
+  'getamplihear.com': 'siteA',
+  'drivebright.com': 'drivebright'
   // Add more mappings as needed
 };
 

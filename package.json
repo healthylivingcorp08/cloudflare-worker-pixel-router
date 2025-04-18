@@ -11,7 +11,7 @@
     "init-auth": "node scripts/init-auth.js",
     "setup": "npm run init-config && npm run init-auth",
     "update-kv": "ts-node --transpile-only scripts/update-kv.ts",
-    "test": "vitest run",
+    "test": "vitest run tests/unit",
     "build": "wrangler build",
     "typecheck": "tsc --noEmit"
   },
@@ -19,8 +19,12 @@
     "@cloudflare/workers-types": "^4.0.0"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "miniflare": "^4.20250410.1",
+    "@cloudflare/vitest-pool-workers": "^0.8.18",
+    "@playwright/test": "^1.52.0",
+    "@types/axios": "^0.9.36",
+    "@types/node": "^20.17.30",
+    "axios": "^1.8.4",
+    "playwright": "^1.52.0",
     "ts-node": "^10.0.0",
     "typescript": "^5.0.0",
     "vitest": "^3.1.1",
