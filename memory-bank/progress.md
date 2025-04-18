@@ -1,10 +1,58 @@
-# Progress Log
+# Project Progress Log
 
-[2025-04-13 21:14:45] - Project initialized and product context documented.
-[2025-04-13 21:15:06] - Active context and recent changes recorded.
-[2025-04-13 21:15:25] - System patterns and architecture documented.
-[2025-04-13 21:16:02] - Decision log and progress log created. Memory bank fully initialized for this project.
+## Phase 1: Initial Setup & Core Functionality (Completed)
+- [X] Set up Cloudflare Worker project (`server_cloudflare_tech`)
+- [X] Define KV store structure for site configurations and pixel data
+- [X] Implement basic routing logic based on hostname
+- [X] Implement core pixel firing logic (PageView, InitiateCheckout, AddToCart, Purchase)
+- [X] Set up logging mechanism
+- [X] Create initial `sites.json` configuration
+- [X] Implement script to update KV store with `sites.json`
+- [X] Basic testing and deployment of the worker.
 
-[2025-04-14 18:14:00] - Paused work on Phase 2 (Admin UI). Current status: Deployed a simplified login page to `/admin/login` for debugging. Awaiting user verification of login functionality.
-[2025-04-14 20:39:00] - Fixed the blank admin dashboard page by replacing the placeholder HTML in `src/admin/router.ts`. Next step is to deploy and re-test the login flow.
-[2025-04-14 20:54:00] - Modified `.github/workflows/deploy.yml` to fix deployment by removing the explicit `command` parameter, allowing Wrangler to use the build configuration from `wrangler.toml`.
+## Phase 2: Admin Panel & Advanced Features (In Progress)
+- [X] Design Admin Panel UI/UX (Basic Layout - See `ADMIN_PANEL_PLAN.md`)
+- [X] Set up basic HTML structure and CSS for Admin Panel (`src/admin/ui/admin.html`, `src/admin/ui/admin.css`)
+- [X] Implement API endpoint (`/admin/api/sites`) to fetch `sites.json` from KV.
+- [X] Implement frontend JS (`src/admin/ui/admin.js`) to fetch and display sites.
+- [X] Implement API endpoint (`/admin/api/sites`) to update `sites.json` in KV (POST request).
+- [X] Add "Save Changes" button functionality in `admin.js` to POST updated data.
+- [X] Add basic authentication for Admin Panel endpoints.
+    - [X] Store hashed password in KV (`AUTH_PASSWORD_HASH`).
+    - [X] Implement `/admin/login` endpoint (HTML form).
+    - [X] Implement `/admin/api/login` endpoint (POST, checks password, sets secure HTTPOnly cookie).
+    - [X] Implement middleware to check for valid session cookie on `/admin` and `/admin/api` routes.
+- [ ] Add UI for editing specific site configurations (pixels, routes, etc.) - *Deferred*
+- [ ] Add UI for viewing pixel fire logs/history - *Deferred*
+- [ ] Implement more robust error handling and reporting.
+- [ ] Add unit and integration tests.
+
+## Phase 3: Monorepo Migration & Refinement (In Progress)
+- [X] Migrate `server_cloudflare_tech` into `ecommerce-monorepo/apps/server-cloudflare-tech`.
+- [X] Migrate `tech-ecom/sites/drivebright` into `ecommerce-monorepo/sites/drivebright`.
+- [X] Update `drivebright` site from Next.js Pages Router to App Router.
+    - [X] Create `src/app/layout.tsx`.
+    - [X] Migrate `pages/index.tsx` to `src/app/page.tsx`.
+    - [X] Migrate `pages/checkout.tsx` to `src/app/checkout/page.tsx`.
+    - [X] Migrate `pages/upsell1.tsx` to `src/app/upsell1/page.tsx`.
+    - [X] Migrate `pages/upsell2.tsx` to `src/app/upsell2/page.tsx`.
+    - [X] Migrate `pages/thank-you.tsx` to `src/app/thank-you/page.tsx`.
+- [ ] Update `drivebright` site build/deployment configuration for App Router.
+- [ ] Update Cloudflare Worker routing/configuration if needed for monorepo structure.
+- [ ] Refactor shared components/utils into `ecommerce-monorepo/packages`.
+- [ ] Test E2E flow after migration.
+
+## Phase 4: Deployment & Monitoring
+- [ ] Set up CI/CD pipeline for monorepo deployment.
+- [ ] Configure production environment variables/secrets.
+- [ ] Implement monitoring and alerting for the Cloudflare Worker.
+- [ ] Final testing and go-live.
+
+---
+*Timestamp Log:*
+[2025-04-17 19:46:14] - Began migration of `drivebright` site to Next.js App Router.
+[2025-04-17 20:15:00] - Migrated `index.tsx` to `app/page.tsx`.
+[2025-04-17 21:05:00] - Migrated `checkout.tsx` to `app/checkout/page.tsx`.
+[2025-04-17 21:45:00] - Migrated `upsell1.tsx` to `app/upsell1/page.tsx`.
+[2025-04-17 22:15:00] - Migrated `upsell2.tsx` to `app/upsell2/page.tsx`.
+[2025-04-17 22:37:05] - Migrated `thank-you.tsx` to `app/thank-you/page.tsx`. Completed initial page migration for `drivebright`.

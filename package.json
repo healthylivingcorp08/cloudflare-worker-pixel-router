@@ -13,7 +13,8 @@
     "update-kv": "ts-node --transpile-only scripts/update-kv.ts",
     "test": "vitest run tests/unit",
     "build": "wrangler build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "kv:sync-configs": "ts-node --transpile-only scripts/sync-kv-configs.ts"
   },
   "dependencies": {
     "@cloudflare/workers-types": "^4.0.0"

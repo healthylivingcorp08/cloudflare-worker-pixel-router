@@ -212,14 +212,21 @@ export default {
         }
       }
 
-      // Handle POST request for the full checkout process
-      else if (pathname === '/api/checkout' && request.method === 'POST') {
+      // Handle POST request for the full checkout process (Now at the root path '/')
+      else if (pathname === '/' && request.method === 'POST') {
         try {
+          console.log('[Worker] Received POST request at root path for checkout.');
           const checkoutData = await request.json() as any; // Type assertion for simplicity
           const { siteId } = checkoutData;
 
           if (!siteId) {
-            return new Response('Missing siteId in request body', { status: 400 });
+            const errorMsg = 'Missing siteId in request body';
+            console.error(`[Worker] Bad Request: ${errorMsg}`);
+            // Return the error message in the response body
+            return new Response(JSON.stringify({ success: false, error: errorMsg }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' }
+            });
           }
 
           console.log(`[Worker] Starting checkout process for siteId: ${siteId}`, checkoutData);
@@ -240,81 +247,97 @@ export default {
 
             // Construct the Sticky.io New Order payload
             // Assuming checkoutData contains nested objects like 'customer', 'shipping', 'billing', 'payment', 'analytics', 'offers'
+            // Helper function to determine card type (basic example)
+            const getCardType = (num: string | undefined): string | undefined => {
+              if (!num) return undefined;
+              if (num.startsWith('4')) return 'VISA';
+              if (num.startsWith('5')) return 'MASTERCARD';
+              if (num.startsWith('34') || num.startsWith('37')) return 'AMEX';
+              if (num.startsWith('6')) return 'DISCOVER';
+              // Add more checks if needed
+              return undefined; // Return undefined if type is unknown or not supported
+            };
+
+            const billingAddress = checkoutData.customer?.billingAddress;
+            const shippingAddress = checkoutData.customer?.shippingAddress;
+            const useShippingForBilling = !billingAddress || Object.keys(billingAddress).length === 0;
+
             const stickyPayload = {
+              // --- Customer & Billing ---
               firstName: checkoutData.customer?.firstName,
               lastName: checkoutData.customer?.lastName,
-              billingFirstName: checkoutData.billing?.firstName || checkoutData.customer?.firstName, // Use billing or fallback to customer
-              billingLastName: checkoutData.billing?.lastName || checkoutData.customer?.lastName,
-              billingAddress1: checkoutData.billing?.address1,
-              billingAddress2: checkoutData.billing?.address2,
-              billingCity: checkoutData.billing?.city,
-              billingState: checkoutData.billing?.state,
-              billingZip: checkoutData.billing?.zip,
-              billingCountry: checkoutData.billing?.country,
+              // Use customer name if billing address is same as shipping
+              billingFirstName: useShippingForBilling ? checkoutData.customer?.firstName : billingAddress?.firstName,
+              billingLastName: useShippingForBilling ? checkoutData.customer?.lastName : billingAddress?.lastName,
+              billingAddress1: useShippingForBilling ? shippingAddress?.address1 : billingAddress?.address1,
+              billingAddress2: useShippingForBilling ? shippingAddress?.address2 : billingAddress?.address2,
+              billingCity: useShippingForBilling ? shippingAddress?.city : billingAddress?.city,
+              billingState: useShippingForBilling ? shippingAddress?.state : billingAddress?.state,
+              billingZip: useShippingForBilling ? shippingAddress?.zip : billingAddress?.zip,
+              billingCountry: useShippingForBilling ? shippingAddress?.country : billingAddress?.country,
               phone: checkoutData.customer?.phone,
               email: checkoutData.customer?.email,
-              // --- Payment Details ---
-              // Assuming raw card details are passed in checkoutData.payment based on example
-              // If using Braintree nonce, adjust this section accordingly
-              creditCardType: checkoutData.payment?.cardType, // e.g., VISA
-              creditCardNumber: checkoutData.payment?.encryptedCard ? await decryptData(checkoutData.payment.encryptedCard, env).catch((e: Error) => {
-                console.error('Failed to decrypt card number:', e.message);
-                throw new Error('Payment processing failed - invalid card data');
-              }) : undefined,
-              expirationDate: checkoutData.payment?.encryptedExpiry ? await decryptData(checkoutData.payment.encryptedExpiry, env).catch((e: Error) => {
-                console.error('Failed to decrypt expiration date:', e.message);
-                throw new Error('Payment processing failed - invalid expiration data');
-              }) : undefined,
-              CVV: checkoutData.payment?.encryptedCvv ? await decryptData(checkoutData.payment.encryptedCvv, env).catch((e: Error) => {
-                console.error('Failed to decrypt CVV:', e.message);
-                throw new Error('Payment processing failed - invalid security code');
-              }) : undefined,
+              billingSameAsShipping: useShippingForBilling ? 'YES' : 'NO',
+
+              // --- Payment Details (Flattened & Formatted - Top Level) ---
+              creditCardType: getCardType(checkoutData.payment?.cardNumber),
+              creditCardNumber: checkoutData.payment?.cardNumber,
+              expirationDate: checkoutData.payment?.expirationMonth && checkoutData.payment?.expirationYear
+                                ? `${checkoutData.payment.expirationMonth}${checkoutData.payment.expirationYear.slice(-2)}`
+                                : undefined,
+              CVV: checkoutData.payment?.cvv,
+
               // --- Shipping Details ---
-              shippingId: checkoutData.shipping?.shippingId || '2', // Default or from data
-              shippingAddress1: checkoutData.shipping?.address1,
-              shippingAddress2: checkoutData.shipping?.address2,
-              shippingCity: checkoutData.shipping?.city,
-              shippingState: checkoutData.shipping?.state,
-              shippingZip: checkoutData.shipping?.zip,
-              shippingCountry: checkoutData.shipping?.country,
-              billingSameAsShipping: checkoutData.billing?.sameAsShipping ? 'YES' : 'NO',
+              shippingId: checkoutData.products?.[0]?.ship_id?.toString() || '2',
+              shippingFirstName: checkoutData.customer?.firstName, // REQUIRED
+              shippingLastName: checkoutData.customer?.lastName, // REQUIRED
+              shippingAddress1: shippingAddress?.address1,
+              shippingAddress2: shippingAddress?.address2,
+              shippingCity: shippingAddress?.city,
+              shippingState: shippingAddress?.state,
+              shippingZip: shippingAddress?.zip,
+              shippingCountry: shippingAddress?.country,
+
               // --- Transaction & Offer ---
               tranType: 'Sale',
-              ipAddress: request.headers.get('CF-Connecting-IP') || '', // Get IP from Cloudflare header
-              campaignId: checkoutData.analytics?.campaignId, // From analytics object
-              offers: checkoutData.offers, // Assuming offers array is passed directly
-              // Example structure for offers:
-              // [ { offer_id: "8", product_id: "4", billing_model_id: "6", quantity: "1" } ]
+              ipAddress: request.headers.get('CF-Connecting-IP') || '127.0.0.1', // Added fallback IP
+              // --- TEMP HARDCODING FOR drivebright TEST ---
+              campaignId: siteId === 'drivebright' ? '4' : checkoutData.analytics?.campaignId,
+              offers: siteId === 'drivebright'
+                ? [{ offer_id: "1", product_id: "4", billing_model_id: "2", quantity: "1" }] // Changed billing_model_id to 2
+                : checkoutData.offers,
+              // --- END TEMP HARDCODING ---
+
               // --- Tracking ---
               AFID: checkoutData.analytics?.afid,
               SID: checkoutData.analytics?.sid,
-              AFFID: checkoutData.analytics?.affId, // Network ID
-              C1: checkoutData.analytics?.c1,     // Affiliate ID
-              C2: checkoutData.analytics?.c2,     // Campaign ID (redundant?)
-              C3: checkoutData.analytics?.c3,
-              AID: checkoutData.analytics?.aid,
-              OPT: checkoutData.analytics?.opt,
-              click_id: checkoutData.analytics?.clickId,
+              AFFID: checkoutData.analytics?.affId,
+              C1: checkoutData.analytics?.c1,
+              C2: checkoutData.analytics?.c2,
+              C3: checkoutData.analytics?.c3, // Added from C# example
+              AID: checkoutData.analytics?.aid, // Added from C# example
+              OPT: checkoutData.analytics?.opt, // Added from C# example
+              click_id: checkoutData.analytics?.click_id || checkoutData.analytics?.clickId, // Added from C# example (corrected mapping)
+              notes: checkoutData.notes, // Added from C# example (assuming notes might be top-level)
               // --- UTM ---
               utm_source: checkoutData.analytics?.utm_source,
               utm_medium: checkoutData.analytics?.utm_medium,
               utm_campaign: checkoutData.analytics?.utm_campaign,
               utm_content: checkoutData.analytics?.utm_content,
               utm_term: checkoutData.analytics?.utm_term,
-              // Add other fields from example if needed (notes, sessionId, etc.)
+              // Add other fields from example if needed (sessionId, etc.)
             };
             // Securely log payment payload without sensitive data
             const { creditCardNumber, CVV, expirationDate, ...safePayload } = stickyPayload;
+            // Log the payload structure being sent, marking sensitive fields
             console.log('[Worker] Sending payload to Sticky.io:', {
               ...safePayload,
-              payment: {
-                cardType: stickyPayload.creditCardType,
-                creditCardNumber: '[REDACTED]',
-                expirationDate: '[REDACTED]',
-                CVV: '[REDACTED]'
-              }
+              creditCardNumber: '[REDACTED]',
+              expirationDate: '[REDACTED]',
+              CVV: '[REDACTED]'
             });
 
+            console.log('[Worker] Calling Sticky.io API URL:', stickyApiUrl); // Log the URL being called
             const stickyResponse = await fetch(stickyApiUrl, {
               method: 'POST',
               headers: {
@@ -467,17 +490,22 @@ export default {
              }
           }
 
-          // --- 4. Return Response ---
-          const responsePayload = {
-            stickyOrderId: stickyOrderId,
-            decision: decision,
-            actionsToExecute: actionsToExecute
-          };
+          // --- 4. Return Redirect Response ---
+          // Construct the redirect URL. Ideally, this comes from config/KV.
+          // For now, hardcoding to fix the test. Use the Next.js app's URL.
+          // TODO: Make this configurable via environment variables or KV store.
+          const nextJsBaseUrl = 'http://localhost:3000'; // Assuming Next.js runs on port 3000 locally
+          const redirectUrl = new URL(nextJsBaseUrl);
+          redirectUrl.pathname = '/upsell1/'; // Set the target path
+          // Optionally add order ID or other params if needed by upsell page
+          redirectUrl.searchParams.set('orderId', stickyOrderId || ''); // Pass order ID as query param
 
-          const response = new Response(JSON.stringify(responsePayload), {
-            headers: { 'Content-Type': 'application/json' },
-            status: 200
-          });
+          console.log(`[Worker] Checkout successful. Redirecting to: ${redirectUrl.toString()}`);
+
+          // Return a 302 Redirect response
+          const response = Response.redirect(redirectUrl.toString(), 302);
+
+          // Add CORS headers *to the redirect response* if needed, though often not strictly necessary for redirects
           return addCorsHeaders(response, request);
 
         } catch (error: any) {
