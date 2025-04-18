@@ -44,3 +44,44 @@ Addresses user concerns about managing a single large JSON file and facilitates 
 - Cloudflare KV namespace to be created and bound.
 - Worker Secrets to be used for sensitive API keys.
 - Code refactoring required in `config.ts`, `router.ts`, `handler.ts`, `types.ts`, `pixel.ts`, and potentially a new `api.ts`.
+
+---
+
+**Date:** 2025-04-18
+
+**Context:** Fixing "Could not load order details" error on `drivebright` thank you page.
+
+**Decision:** Implement a proxy pattern for fetching order details.
+  - The Next.js thank you page (`thank-you/page.tsx`) calls a Next.js API route (`/api/order-confirmation`).
+  - The Next.js API route (`src/app/api/order-confirmation/route.ts`) calls a new Cloudflare worker endpoint (`/api/order-details/:orderId`).
+  - The Cloudflare worker endpoint (`src/index.ts`) calls the Sticky.io API (`GET /orders/{order_id}`) using credentials stored in worker secrets (`STICKY_USERNAME`, `STICKY_PASSWORD`).
+
+**Rationale:** Keeps Sticky.io credentials secure within the worker environment, preventing exposure to the frontend or Next.js server. Follows the existing pattern used for creating orders via the worker.
+
+**Implementation Details:**
+  - Added `GET /api/order-details/:orderId` handler to `src/index.ts` in the worker project.
+  - Modified `src/app/api/order-confirmation/route.ts` in the `drivebright` project to call the worker endpoint using `process.env.NEXT_PUBLIC_WORKER_URL`.
+  - Added CORS handling for the new worker endpoint.
+  - Mapped Sticky.io response fields to the `OrderConfirmation` interface required by the frontend.
+
+
+---
+
+**Date:** 2025-04-18 (Correction)
+
+**Context:** Correcting the implementation for fetching order details based on user feedback and Sticky.io API documentation (`order_view` endpoint).
+
+**Decision:** Modify the proxy pattern implementation.
+  - Change worker endpoint to `POST /api/order-details` (expecting `orderId` in body).
+  - Update worker handler to call Sticky.io `POST /order_view` with `order_id` in the body.
+  - Change Next.js API route `/api/order-confirmation` to `POST` (expecting `orderId` in body).
+  - Update Next.js API route to call worker `POST /api/order-details` with `orderId` in body.
+  - Update `thank-you/page.tsx` to call `POST /api/order-confirmation` with `orderId` in body.
+
+**Rationale:** Aligns the implementation with the actual Sticky.io API requirements for fetching order details.
+
+**Implementation Details:**
+  - Modified `src/index.ts` (worker): Changed route, method, Sticky.io URL, payload, and mapping.
+  - Modified `src/app/api/order-confirmation/route.ts` (Next.js): Changed method, body parsing, and worker call.
+  - Modified `src/app/(checkout)/thank-you/page.tsx` (Next.js): Changed fetch method, headers, and body.
+

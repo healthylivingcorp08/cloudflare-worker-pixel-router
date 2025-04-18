@@ -1,3 +1,5 @@
+[2025-04-18 3:32:00] - Completed: Modified `thank-you/page.tsx` to display a loading state while fetching order details, preventing the premature display of the error message.
+
 # Project Progress Log
 
 ## Phase 1: Initial Setup & Core Functionality (Completed)
@@ -41,6 +43,14 @@
 - [ ] Update Cloudflare Worker routing/configuration if needed for monorepo structure.
 - [ ] Refactor shared components/utils into `ecommerce-monorepo/packages`.
 - [ ] Test E2E flow after migration.
+*   [2025-04-18 12:37:00] - Corrected implementation for `drivebright` thank you page order details fetch:
+    *   Changed worker endpoint to `POST /api/order-details`.
+    *   Updated worker to call Sticky.io `POST /order_view`.
+    *   Changed Next.js API route `src/app/api/order-confirmation/route.ts` to `POST`.
+    *   Updated thank you page `src/app/(checkout)/thank-you/page.tsx` to use `POST`.
+
+    - [X] Fixed thank you page order details loading (via worker proxy, corrected to use POST /order_view). This should resolve E2E test failures.
+
 
 ## Phase 4: Deployment & Monitoring
 - [ ] Set up CI/CD pipeline for monorepo deployment.

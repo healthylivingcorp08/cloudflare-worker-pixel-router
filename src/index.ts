@@ -53,6 +53,35 @@ import { handleAdminRequest } from './admin/router';
 import { authenticateRequest } from './admin/middleware/auth';
 import { decryptData } from './utils/encryption';
 
+// --- Interfaces for Order Confirmation (matching frontend) ---
+interface Address {
+    address1: string;
+    address2?: string;
+    city: string;
+    state: string;
+    country: string;
+    zip: string;
+}
+
+interface Product {
+    product_name: string;
+    quantity: number;
+    unitPrice: number; // Assuming Sticky.io provides this
+    regPrice?: number;
+    imageUrl?: string;
+}
+
+interface OrderConfirmation {
+    orderNumbers: string; // Assuming Sticky.io provides this
+    firstName: string;
+    lastName: string;
+    shippingAddress: Address;
+    products: Product[];
+    shippingFee: number; // Assuming Sticky.io provides this
+    creditCardType?: string; // Added credit card type (adjust type if needed)
+}
+// --- End Interfaces ---
+
 // Helper function to check if a path is public within the admin scope
 function isAdminPublicPath(pathname: string): boolean {
   const publicPaths = [
@@ -134,7 +163,9 @@ export default {
 
       // Handle CORS preflight requests for API routes
       // Added /api/checkout and renamed /api/process-checkout to /api/checkout-rules
-      if (request.method === 'OPTIONS' && (pathname === '/api/checkout' || pathname === '/api/checkout-rules' || pathname === '/api/page-pixels')) {
+      // Added /api/order-details/* for CORS preflight
+      // Added /api/order-details for CORS preflight (now POST)
+      if (request.method === 'OPTIONS' && (pathname === '/api/checkout' || pathname === '/api/checkout-rules' || pathname === '/api/page-pixels' || pathname === '/api/order-details')) {
         return handleOptions(request);
       }
 
@@ -211,6 +242,121 @@ export default {
           return new Response(`Error determining checkout rules: ${error.message}`, { status: 500 });
         }
       }
+
+     // --- Handle POST request for fetching order details ---
+     else if (pathname === '/api/order-details' && request.method === 'POST') {
+       try {
+         const body = await request.json() as { orderId?: string };
+         const orderId = body.orderId;
+
+         if (!orderId) {
+           return addCorsHeaders(new Response(JSON.stringify({ message: 'Missing orderId in request body' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
+         }
+
+         // Ensure orderId is treated as a string for the API call payload
+         const orderIdStr = String(orderId);
+
+         console.log(`[Worker] Fetching order details for orderId: ${orderIdStr}`);
+
+         // Get Sticky.io credentials and base URL
+         const stickyBaseUrl = 'https://techcommerceunlimited.sticky.io/api/v1'; // Provided base URL
+         const stickyApiUser = env.STICKY_USERNAME;
+         const stickyApiPass = env.STICKY_PASSWORD;
+
+         if (!stickyApiUser || !stickyApiPass) {
+           console.error('[Worker] Sticky.io API credentials missing in environment secrets for order fetch.');
+           throw new Error('Sticky.io API credentials missing');
+         }
+
+         // Use the correct order_view endpoint
+         const stickyUrl = `${stickyBaseUrl}/order_view`;
+         const stickyPayload = { order_id: [orderIdStr] }; // Send order_id as an array in the body
+
+         console.log(`[Worker] Calling Sticky.io POST: ${stickyUrl}`);
+         console.log(`[Worker] Sticky.io Payload: ${JSON.stringify(stickyPayload)}`);
+
+         const stickyResponse = await fetch(stickyUrl, {
+           method: 'POST',
+           headers: {
+             'Authorization': 'Basic ' + btoa(`${stickyApiUser}:${stickyApiPass}`),
+             'Content-Type': 'application/json',
+             'Accept': 'application/json'
+           },
+           body: JSON.stringify(stickyPayload)
+         });
+
+         console.log('[Worker] Sticky.io POST Order Response Status:', stickyResponse.status);
+
+         // Read body regardless of status for potential error messages
+         const responseBodyText = await stickyResponse.text();
+         console.log('[Worker] Sticky.io POST Order Response Body Text:', responseBodyText);
+
+         if (!stickyResponse.ok) {
+           // Attempt to parse error, fallback to text
+           let errorMessage = `Sticky.io API Error: ${stickyResponse.statusText} (Status: ${stickyResponse.status})`;
+           try {
+               const errorJson = JSON.parse(responseBodyText);
+               errorMessage += ` - ${errorJson.message || errorJson.status || JSON.stringify(errorJson)}`;
+           } catch {
+               errorMessage += ` - ${responseBodyText}`;
+           }
+           console.error(errorMessage);
+           throw new Error(errorMessage);
+         }
+
+         // Parse the successful response
+         const stickyData = JSON.parse(responseBodyText) as any; // Type assertion for simplicity
+
+         // Check for API-level errors even if HTTP status is OK
+         if (stickyData.response_code !== '100') {
+            console.error(`[Worker] Sticky.io API returned error code ${stickyData.response_code}: ${stickyData.error_message || JSON.stringify(stickyData)}`);
+            throw new Error(`Sticky.io API Error: ${stickyData.error_message || 'Unknown error'} (Code: ${stickyData.response_code})`);
+         }
+
+         console.log('[Worker] Sticky.io POST Order Response Body JSON:', JSON.stringify(stickyData));
+
+
+         // --- Map Sticky.io response to OrderConfirmation (Updated based on example) ---
+         const mappedOrder: OrderConfirmation = {
+           orderNumbers: stickyData.order_id?.toString() || orderIdStr,
+           firstName: stickyData.shipping_first_name || stickyData.billing_first_name || 'N/A',
+           lastName: stickyData.shipping_last_name || stickyData.billing_last_name || 'N/A',
+           shippingAddress: {
+             address1: stickyData.shipping_street_address || '',
+             address2: stickyData.shipping_street_address2 || undefined,
+             city: stickyData.shipping_city || '',
+             state: stickyData.shipping_state || '', // Assuming state code (e.g., 'MO')
+             country: stickyData.shipping_country || '', // Assuming country code (e.g., 'US')
+             zip: stickyData.shipping_postcode || '',
+           },
+           products: (stickyData.products || []).map((item: any) => ({
+             product_name: item.name || 'Unknown Product',
+             quantity: parseInt(item.product_qty || '1'), // Use product_qty
+             unitPrice: parseFloat(item.price || '0'),
+             // regPrice: parseFloat(item.regular_price || '0'), // If available
+             // imageUrl: item.image_url || undefined // If available
+           })),
+           // Use totals_breakdown if available, otherwise fallback
+           shippingFee: parseFloat(stickyData.totals_breakdown?.shipping ?? stickyData.shipping_amount ?? '0'),
+           // Assuming Sticky.io returns credit card type like this:
+           creditCardType: stickyData.credit_card_type,
+         };
+         // --- End Mapping ---
+
+         const response = new Response(JSON.stringify(mappedOrder), {
+           headers: { 'Content-Type': 'application/json' },
+           status: 200
+         });
+         return addCorsHeaders(response, request);
+
+       } catch (error: any) {
+         console.error('[Worker] Error fetching order details:', error);
+         // Ensure error response is JSON
+         const response = new Response(JSON.stringify({ message: `Error fetching order details: ${error.message}` }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+         return addCorsHeaders(response, request);
+       }
+     }
+     // --- End GET Order Details Handler ---
 
       // Handle POST request for the full checkout process (Now at the root path '/')
       else if (pathname === '/' && request.method === 'POST') {
@@ -502,10 +648,12 @@ export default {
 
           console.log(`[Worker] Checkout successful. Redirecting to: ${redirectUrl.toString()}`);
 
-          // Return a 302 Redirect response
-          const response = Response.redirect(redirectUrl.toString(), 302);
-
-          // Add CORS headers *to the redirect response* if needed, though often not strictly necessary for redirects
+          // Return a JSON response to the Next.js API route indicating success and the order ID
+          const response = new Response(JSON.stringify({ success: true, orderId: stickyOrderId }), {
+            headers: { 'Content-Type': 'application/json' },
+            status: 200
+          });
+          console.log('[Worker] Returning successful checkout JSON response:', { status: response.status, headers: Object.fromEntries(response.headers.entries()), body: JSON.stringify({ success: true, orderId: stickyOrderId }) });
           return addCorsHeaders(response, request);
 
         } catch (error: any) {
