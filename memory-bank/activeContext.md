@@ -89,7 +89,7 @@
 
 
 *   [2025-04-18 3:32:00] - Applied fix to `thank-you/page.tsx` to initialize `isLoading` state to `true`, ensuring the loading message is displayed while fetching order data.
-
+*   [2025-04-18 18:50:00] - Corrected `isLoading` initial state in `thank-you/page.tsx` from `false` back to `true` to prevent the error message from flashing before data loads.
 
 
 

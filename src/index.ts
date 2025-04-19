@@ -729,20 +729,21 @@ export default {
              const affRules: { affId: string; actions: string[] }[] = JSON.parse(affRulesJson);
 
              // 4. Find Matching Affiliate Rule
-             const requestAffId = affid || 'default'; // Use 'default' if no affid provided
+             const requestAffId = affid; // Use affid directly, could be null/undefined
              console.log(`[Worker] Looking for AffId rule matching: '${requestAffId}'`);
-             let matchedRule = affRules.find(rule => rule.affId === requestAffId);
 
-             if (!matchedRule) {
-                console.log(`[Worker] No exact match for '${requestAffId}', falling back to 'default'.`);
-                matchedRule = affRules.find(rule => rule.affId === 'default'); // Fallback to default
+             let matchedRule = null;
+             if (requestAffId) { // Only search if requestAffId is truthy
+                 matchedRule = affRules.find(rule => rule.affId === requestAffId);
+             } else {
+                 console.log(`[Worker] No affid provided, skipping affiliate rule lookup.`);
              }
 
              if (matchedRule) {
                console.log(`[Worker] Found matching AffId rule:`, matchedRule);
                actionKeysToExecute = matchedRule.actions;
-             } else {
-                console.log(`[Worker] No matching AffId rule found for '${requestAffId}' or default.`);
+             } else if (requestAffId) { // Only log 'not found' if we actually looked for a specific affid
+                console.log(`[Worker] No matching AffId rule found for '${requestAffId}'.`);
              }
            }
          } else {

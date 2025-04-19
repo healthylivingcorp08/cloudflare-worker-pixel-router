@@ -66,3 +66,4 @@
 [2025-04-17 21:45:00] - Migrated `upsell1.tsx` to `app/upsell1/page.tsx`.
 [2025-04-17 22:15:00] - Migrated `upsell2.tsx` to `app/upsell2/page.tsx`.
 [2025-04-17 22:37:05] - Migrated `thank-you.tsx` to `app/thank-you/page.tsx`. Completed initial page migration for `drivebright`.
+[2025-04-18 18:50:00] - Completed: Fixed thank you page (`thank-you/page.tsx`) flash of error message by setting initial `isLoading` state to `true`.
