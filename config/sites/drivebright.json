@@ -1,0 +1,18 @@
+{
+  "siteId": "drivebright",
+  "scrubPercent": 0.1,
+  "pages": {
+    "checkout": {
+      "pixels": [
+        {
+          "type": "facebook",
+          "config": {
+            "pixelId": "1234567890",
+            "eventName": "Purchase"
+          }
+        }
+      ],
+      "apiEndpoints": []
+    }
+  }
+}

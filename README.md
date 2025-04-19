@@ -186,3 +186,29 @@ This endpoint determines which pixels/actions should be executed on a given fron
 **Local KV Population:**
 
 *   Use the `scripts/populate-local-kv.sh` script to load example data into your local KV for testing. Ensure the `wrangler kv key put` commands in the script use the correct syntax.
+
+## Testing
+
+The project includes both unit and end-to-end tests:
+
+### Unit Tests
+- Located in `tests/unit/`
+- Uses Vitest for testing worker logic
+- Configuration in `test/vitest.config.ts`
+- Run with: `npm test`
+
+### End-to-End Tests
+- Located in `tests/e2e/`
+- Uses Playwright for browser automation
+- Tests complete user flows including checkout
+- Run with: `npx playwright test`
+
+## Memory Bank
+
+The memory-bank/ directory maintains project context and history:
+
+- `productContext.md`: High-level project description and goals
+- `activeContext.md`: Current focus and recent changes
+- `systemPatterns.md`: Architectural patterns and conventions
+- `decisionLog.md`: Key technical decisions and rationale
+- `progress.md`: Task completion tracking

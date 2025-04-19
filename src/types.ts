@@ -83,6 +83,19 @@ export interface ResolutionContext {
 
 // Cloudflare Worker environment type for KV and Secret bindings
 export interface Env {
-  PIXEL_CONFIG: KVNamespace;
-  STICKYIO_API_KEY: string; // Worker Secret binding
+  PIXEL_CONFIG: KVNamespace; // KV Binding for rules/actions
+
+  // Secrets for Sticky.io API
+  STICKY_API_URL: string;      // Worker Secret binding
+  STICKY_USERNAME: string;     // Worker Secret binding (production name)
+  STICKY_PASSWORD: string;     // Worker Secret binding (production name)
+
+  // Secrets for Admin Auth (Example)
+  ADMIN_USERNAME?: string; // Optional secret
+  ADMIN_PASSWORD?: string; // Optional secret
+
+  // Secret for Encryption
+  ENCRYPTION_SECRET?: string; // Added for encryption/decryption
+
+  // Other secrets can be added here
 }

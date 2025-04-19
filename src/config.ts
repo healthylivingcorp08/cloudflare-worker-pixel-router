@@ -4,7 +4,8 @@ import { SiteConfig, SitesConfig, Env, PageConfig, PixelConfig, ApiEndpointConfi
  * Map of hostnames to site IDs
  */
 const HOST_TO_SITE_MAP: { [hostname: string]: string } = {
-  'getamplihear.com': 'siteA'
+  'getamplihear.com': 'siteA',
+  'drivebright.com': 'drivebright'
   // Add more mappings as needed
 };
 
@@ -71,46 +72,72 @@ function getSiteIdFromHostname(hostname: string): string {
 }
 
 /**
- * Load a site's configuration from KV store
- * Falls back to local JSON file if not in KV
- * @param siteId The site identifier (e.g., 'siteA')
+ * Load a site's configuration from granular KV store keys
+ * @param siteId The site identifier (e.g., 'drivebright')
  * @param env Cloudflare Worker environment
  */
 async function loadSiteConfig(siteId: string, env: Env): Promise<SiteConfig> {
-  // Try to get config from KV first
-  const kvKey = `site_config_${siteId}`;
-  const kvConfig = await env.PIXEL_CONFIG.get(kvKey);
-  
-  if (kvConfig) {
-    try {
-      const config = JSON.parse(kvConfig);
-      if (!isSiteConfig(config)) {
-        throw new Error(`Invalid configuration format for site: ${siteId}`);
-      }
-      return config;
-    } catch (error) {
-      console.error(`Error parsing KV config for ${siteId}:`, error);
-    }
-  }
-
-  // Fall back to local JSON file
   try {
-    const response = await fetch(`/config/sites/${siteId}.json`);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    // Define keys based on the granular structure
+    const scrubPercentKey = `${siteId}_rule_scrubPercent`;
+    const pageRulesKey = `${siteId}_rule_pageRules`;
+
+    // Fetch values concurrently
+    const [scrubPercentStr, pageRulesStr] = await Promise.all([
+      env.PIXEL_CONFIG.get(scrubPercentKey),
+      env.PIXEL_CONFIG.get(pageRulesKey)
+    ]);
+
+    // Validate scrubPercent
+    if (scrubPercentStr === null) {
+      throw new Error(`KV key not found: ${scrubPercentKey}`);
     }
-    const config = await response.json();
-    
-    if (!isSiteConfig(config)) {
-      throw new Error(`Invalid configuration format in JSON file for site: ${siteId}`);
+    const scrubPercent = parseInt(scrubPercentStr, 10);
+    if (isNaN(scrubPercent)) {
+      throw new Error(`Invalid number format for ${scrubPercentKey}: ${scrubPercentStr}`);
     }
-    
-    // Cache the config in KV for future use
-    await env.PIXEL_CONFIG.put(kvKey, JSON.stringify(config));
-    
-    return config;
-  } catch (error) {
-    throw new Error(`Failed to load configuration for site: ${siteId}`);
+
+    // Validate and parse pageRules
+    if (pageRulesStr === null) {
+      throw new Error(`KV key not found: ${pageRulesKey}`);
+    }
+    let pages: { [pageName: string]: PageConfig };
+    try {
+      pages = JSON.parse(pageRulesStr);
+      // Optional: Add validation for the pages object structure if needed
+      // e.g., check if it's an object and its values conform to PageConfig
+      if (typeof pages !== 'object' || pages === null) {
+        throw new Error('Parsed pageRules is not a valid object.');
+      }
+      // Deeper validation using isPageConfig could be added here if necessary
+      // Object.values(pages).forEach((pageConf, index) => {
+      //   if (!isPageConfig(pageConf)) {
+      //     throw new Error(`Invalid PageConfig structure for page at index ${index}`);
+      //   }
+      // });
+
+    } catch (parseError: any) {
+      throw new Error(`Error parsing JSON for ${pageRulesKey}: ${parseError.message}`);
+    }
+
+    // Construct the SiteConfig object
+    const siteConfig: SiteConfig = {
+      siteId: siteId, // Add siteId to the config object
+      scrubPercent: scrubPercent,
+      pages: pages
+    };
+
+    // Optional: Validate the constructed object if needed (isSiteConfig might need adjustment)
+    // if (!isSiteConfig(siteConfig)) {
+    //    throw new Error(`Constructed SiteConfig is invalid for site: ${siteId}`);
+    // }
+
+    return siteConfig;
+
+  } catch (error: any) {
+    console.error(`Failed to load configuration for site ${siteId} from granular KV keys:`, error.message);
+    // Re-throw or handle appropriately
+    throw new Error(`Failed to load configuration for site: ${siteId}. Reason: ${error.message}`);
   }
 }
 
@@ -130,18 +157,22 @@ export async function getConfigForRequest(request: Request, env: Env): Promise<S
  * This could be used during deployment or via a cron trigger
  * @param env Cloudflare Worker environment
  */
-export async function initializeConfigs(env: Env): Promise<void> {
-  for (const [hostname, siteId] of Object.entries(HOST_TO_SITE_MAP)) {
-    try {
-      const config = await loadSiteConfig(siteId, env);
-      const kvKey = `site_config_${siteId}`;
-      await env.PIXEL_CONFIG.put(kvKey, JSON.stringify(config));
-      console.log(`Initialized config for ${siteId}`);
-    } catch (error) {
-      console.error(`Failed to initialize config for ${siteId}:`, error);
-    }
-  }
-}
+// export async function initializeConfigs(env: Env): Promise<void> {
+//   // This function's logic is likely incompatible with the granular key structure
+//   // and needs to be re-evaluated or removed.
+//   console.warn("initializeConfigs function is commented out due to incompatibility with granular KV structure.");
+//   // for (const [hostname, siteId] of Object.entries(HOST_TO_SITE_MAP)) {
+//   //   try {
+//   //     // Logic to read granular keys and potentially write a single key? Or just validate?
+//   //     // const config = await loadSiteConfig(siteId, env); // This now reads granular
+//   //     // const kvKey = `site_config_${siteId}`; // Writing this key is likely not desired now
+//   //     // await env.PIXEL_CONFIG.put(kvKey, JSON.stringify(config));
+//   //     console.log(`Config check/initialization logic needed for ${siteId} with granular keys.`);
+//   //   } catch (error) {
+//   //     console.error(`Failed to initialize/check config for ${siteId}:`, error);
+//   //   }
+//   // }
+// }
 
 // Export the hostname map for testing/debugging
 export { HOST_TO_SITE_MAP };
