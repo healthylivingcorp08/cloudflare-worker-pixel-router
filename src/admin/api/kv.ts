@@ -36,7 +36,7 @@ export async function handleListKeys(request: AuthenticatedRequest, env: Env): P
 
     // 1. Filter by Site ID if provided (overrides status filter)
     if (siteId) {
-      keysToProcess = keysToProcess.filter(key => key.name.startsWith(`${siteId}:`));
+      keysToProcess = keysToProcess.filter(key => key.name.startsWith(`${siteId}_`)); // Use underscore
       console.log(`[KV] Filtered by siteId '${siteId}': ${keysToProcess.length} keys remaining.`);
     }
     // 2. Filter by Status if provided (and no siteId filter)
@@ -79,9 +79,9 @@ export async function handleListKeys(request: AuthenticatedRequest, env: Env): P
     // Fetch values for the final filtered keys
     const keyPromises = keysToProcess.map(async (key) => {
         const value = await env.PIXEL_CONFIG.get(key.name);
-        const parts = key.name.split(':'); // Split by ':'
+        const parts = key.name.split('_'); // Split by underscore
         const site = parts[0];
-        const type = parts.slice(1).join(':'); // Re-join if type itself contains ':'
+        const type = parts.slice(1).join('_'); // Re-join if type itself contains underscores
         return {
           name: key.name,
           value: value, // Include the value

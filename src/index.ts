@@ -1106,7 +1106,7 @@ export default {
       // return handleRequest(request, env);
 
       // Default fallback if no route matches
-      console.log('[Worker] No matching route found');
+      console.log(`[Worker] No matching route found for path: ${pathname} and method: ${request.method}`); // Added detailed log
       return new Response('Not Found', { status: 404 });
 
     } catch (error) {

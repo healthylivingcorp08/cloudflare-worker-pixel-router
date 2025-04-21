@@ -26,7 +26,7 @@ tool_use_guidelines:
 
 rules:
   environment:
-    working_directory: "C:\Users\STD\Documents\VsCode\server_cloudflare_tech"
+    working_directory: "C:\Users\88Devs\Documents\VsCode\cloudflare-worker-pixel-router"
     restrictions:
       - "Cannot change working directory"
       - "No ~ or $HOME in paths."
