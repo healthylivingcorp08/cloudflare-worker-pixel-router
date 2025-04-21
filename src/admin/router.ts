@@ -1,224 +1,6 @@
 import { Env } from '../types';
-
-// Import admin.js content as a string
-const adminJs = `let allKVEntries = []; // Store all entries for filtering
-
-// Get auth token from localStorage
-function getAuthToken() {
-    return localStorage.getItem('adminToken');
-}
-
-// Make authenticated fetch request
-async function authFetch(url, options = {}) {
-    const token = getAuthToken();
-    if (!token) {
-        window.location.href = '/admin/login'; // Redirect if no token
-        return Promise.reject('No auth token found'); // Return a rejected promise
-    }
-
-    const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': \`Bearer \${token}\`,
-        ...(options.headers || {})
-    };
-
-    try {
-        const response = await fetch(url, { ...options, headers });
-
-        if (response.status === 401) {
-            // Token expired or invalid
-            localStorage.removeItem('adminToken');
-            window.location.href = '/admin/login';
-            return Promise.reject('Unauthorized'); // Return a rejected promise
-        }
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(\`HTTP error! status: \${response.status}, message: \${errorText}\`);
-        }
-
-        // Handle cases where response might be empty (e.g., DELETE)
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.indexOf("application/json") !== -1) {
-            return await response.json();
-        } else {
-            return { success: true }; // Assume success for non-JSON responses if status is OK
-        }
-    } catch (error) {
-        console.error('Fetch error:', error);
-        alert(\`An error occurred: \${error.message}. Please try again.\`);
-        throw error; // Re-throw error for further handling if needed
-    }
-}
-
-// Render table rows based on provided data
-function renderTable(data) {
-    const tableBody = document.getElementById('kv-entries');
-    tableBody.innerHTML = ''; // Clear existing rows
-
-    if (!data || data.length === 0) {
-        const row = document.createElement('tr');
-        row.innerHTML = '<td colspan="3">No entries found.</td>';
-        tableBody.appendChild(row);
-        return;
-    }
-
-    data.forEach(entry => {
-        const row = document.createElement('tr');
-        // Ensure value is displayed correctly, even if null/undefined
-        const displayValue = entry.value !== null && entry.value !== undefined ? entry.value : 'N/A';
-        row.innerHTML = \`
-            <td>\${entry.name}</td>
-            <td>\${displayValue}</td>
-            <td>
-                <button class="action-btn edit-btn" onclick="editKey('\${entry.name}', '\${displayValue}')">Edit</button>
-                <button class="action-btn delete-btn" onclick="deleteKey('\${entry.name}')">Delete</button>
-            </td>
-        \`;
-        tableBody.appendChild(row);
-    });
-}
-
-// Filter table data
-function filterTable() {
-    const filterValue = document.getElementById('kv-filter').value.toLowerCase();
-    const filteredData = allKVEntries.filter(entry =>
-        entry.name.toLowerCase().includes(filterValue) ||
-        (entry.value && entry.value.toLowerCase().includes(filterValue))
-    );
-    renderTable(filteredData);
-}
-
-// Load KV entries for a specific site and setup filters/listeners
-async function loadKVEntriesAndSetup(siteId) {
-    if (!siteId) {
-        console.error("No siteId provided to loadKVEntriesAndSetup");
-        // Optionally clear the table or show a message
-        const tableBody = document.getElementById('kv-entries');
-        if (tableBody) {
-            tableBody.innerHTML = '<tr><td colspan="3">Please select a site.</td></tr>';
-        }
-        allKVEntries = []; // Clear stored data
-        return;
-    }
-
-    console.log(\`Loading KV entries for site: \${siteId}\`);
-    try {
-        const response = await authFetch(\`/admin/api/kv/list?siteId=\${siteId}\`); // Fetch for the specified site
-        allKVEntries = response.data || []; // Extract the data array
-        renderTable(allKVEntries); // Render the table with new data
-
-        // Ensure filter/bulk listeners are attached (only needs to happen once, really)
-        // Consider moving listener setup outside this function if it causes issues
-        const filterInput = document.getElementById('kv-filter');
-        if (filterInput && !filterInput.dataset.listenerAttached) {
-            filterInput.addEventListener('input', filterTable);
-            filterInput.dataset.listenerAttached = 'true'; // Mark as attached
-        }
-        const bulkEditBtn = document.getElementById('bulk-edit-btn');
-        if (bulkEditBtn && !bulkEditBtn.dataset.listenerAttached) {
-            bulkEditBtn.addEventListener('click', () => alert('Bulk Edit functionality not yet implemented.'));
-            bulkEditBtn.dataset.listenerAttached = 'true'; // Mark as attached
-        }
-
-    } catch (error) {
-        console.error(\`Error loading KV entries for site \${siteId}:\`, error);
-        const tableBody = document.getElementById('kv-entries');
-        if (tableBody) {
-            tableBody.innerHTML = \`<tr><td colspan="3">Error loading data for site \${siteId}.</td></tr>\`;
-        }
-        allKVEntries = []; // Clear data on error
-    }
-}
-
-// Populate site dropdown and load initial data
-async function initializeSiteSelector() {
-    const siteSelect = document.getElementById('site-select');
-    if (!siteSelect) return; // Exit if dropdown doesn't exist
-
-    try {
-        const sitesResponse = await authFetch('/admin/api/sites');
-        const sites = sitesResponse.data || [];
-
-        if (sites.length === 0) {
-             siteSelect.innerHTML = '<option value="">No sites found</option>';
-             loadKVEntriesAndSetup(null); // Load with null to show message
-             return;
-        }
-
-        // Populate dropdown
-        sites.forEach(siteId => {
-            const option = document.createElement('option');
-            option.value = siteId;
-            option.textContent = siteId;
-            siteSelect.appendChild(option);
-        });
-
-        // Set default selection (e.g., 'siteA' if it exists, otherwise the first site)
-        const defaultSite = sites.includes('siteA') ? 'siteA' : sites[0];
-        siteSelect.value = defaultSite;
-
-        // Add event listener to load data on change
-        siteSelect.addEventListener('change', (event) => {
-            loadKVEntriesAndSetup(event.target.value);
-        });
-
-        // Load initial data for the default site
-        loadKVEntriesAndSetup(defaultSite);
-
-    } catch (error) {
-        console.error("Error initializing site selector:", error);
-        siteSelect.innerHTML = '<option value="">Error loading sites</option>';
-        loadKVEntriesAndSetup(null); // Load with null to show message
-    }
-}
-
-// Edit key - Pass current value to pre-fill prompt
-async function editKey(key, currentValue) {
-    const newValue = prompt(\`Enter new value for \${key}:\`, currentValue);
-    if (newValue !== null) { // Check if user cancelled prompt
-        try {
-            await authFetch(\`/admin/api/kv/\${key}\`, {
-                method: 'PUT',
-                body: JSON.stringify({ value: newValue })
-            });
-            // Re-fetch data to reflect changes accurately
-            await loadKVEntriesAndSetup();
-        } catch (error) {
-            console.error(\`Error updating key \${key}:\`, error);
-            // Error alert is handled in authFetch
-        }
-    }
-}
-
-// Delete key
-async function deleteKey(key) {
-    if (confirm(\`Are you sure you want to delete key: \${key}?\`)) {
-        try {
-            await authFetch(\`/admin/api/kv/\${key}\`, {
-                method: 'DELETE'
-            });
-            // Re-fetch data to reflect deletion
-            await loadKVEntriesAndSetup();
-        } catch (error) {
-            console.error(\`Error deleting key \${key}:\`, error);
-            // Error alert is handled in authFetch
-        }
-    }
-}
-
-// Initial load on page ready
-document.addEventListener('DOMContentLoaded', () => {
-    if (!getAuthToken()) {
-        window.location.href = '/admin/login';
-    } else {
-        // HTML elements (dropdown, filter, button) are now part of the static HTML template
-        // Initialize the site selector, which will then load initial KV data
-        initializeSiteSelector();
-    }
-});`;
 import { AuthenticatedRequest, LoginRequest, LoginResponse } from './types';
-import { errorResponse, successResponse } from './middleware/auth';
+import { errorResponse, successResponse, verifyAuthToken } from './middleware/auth'; // Use verifyAuthToken
 import {
   handleListSites,
   handleGetSiteConfig,
@@ -230,8 +12,13 @@ import {
   handleGetValue,
   handleUpdateValue,
   handleDeleteValue,
-  handleBulkUpdate
+  handleBulkUpdate,
+  handleCreateValue,
+  handleBulkDelete,
+  handleCreateSiteFromTemplate,
+  handleDeleteSite // Added for site deletion
 } from './api/kv';
+import { sign } from '@tsndr/cloudflare-worker-jwt'; // Assuming JWT library
 
 // Enhanced Login page HTML
 const loginHtml = `<!DOCTYPE html>
@@ -350,443 +137,282 @@ const loginHtml = `<!DOCTYPE html>
 </html>`;
 
 // Admin UI with KV editing functionality (Single File)
-const adminHtml = `<!DOCTYPE html>
-<html>
-<head>
-    <title>Admin Dashboard</title>
-    <style>
-        body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; background: #f8fafc; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
-        .title { font-size: 1.5rem; font-weight: 600; color: #1e293b; }
-        .logout-btn { padding: 0.5rem 1rem; background: #ef4444; color: white; border: none; border-radius: 0.25rem; cursor: pointer; }
-        .kv-table { width: 100%; border-collapse: collapse; background: white; border-radius: 0.5rem; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .kv-table th, .kv-table td { padding: 1rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
-        .kv-table th { background: #f1f5f9; font-weight: 500; color: #334155; }
-        .action-btn { padding: 0.25rem 0.5rem; margin-right: 0.5rem; border-radius: 0.25rem; cursor: pointer; border: none; color: white; }
-        .edit-btn { background: #3b82f6; }
-        .delete-btn { background: #ef4444; }
-        .filter-container { margin-bottom: 1rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
-        .filter-input { padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.25rem; flex-grow: 1; }
-        .bulk-edit-btn { background: #f59e0b; }
-        .status-message { margin-top: 1rem; padding: 0.75rem; border-radius: 0.25rem; }
-        .status-error { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
-        .status-success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-        .status-loading { background: #e0f2fe; color: #0c4a6e; border: 1px solid #bae6fd; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1 class="title">Admin Dashboard</h1>
-            <button class="logout-btn" onclick="logout()">Logout</button>
-        </div>
+// Removed adminHtml (lines 139-544)
 
-        <h2>KV Store Editor</h2>
-        <div id="status-area"></div>
-        <div class="filter-container">
-            <label for="site-select">Site:</label>
-            <select id="site-select" class="filter-input" style="flex-grow: 0; min-width: 150px;"></select>
-            <input type="text" id="kv-filter" placeholder="Filter by key or value..." class="filter-input">
-            <button id="bulk-edit-btn" class="action-btn bulk-edit-btn">Bulk Edit</button>
-        </div>
-        <table class="kv-table">
-            <thead>
-                <tr>
-                    <th>Key</th>
-                    <th>Value</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody id="kv-entries">
-                <tr><td colspan="3">Loading...</td></tr>
-            </tbody>
-        </table>
-    </div>
+// Removed handleAuth (lines 549-595)
 
-    <script>
-        let allKVEntries = [];
-        let currentSiteId = null;
 
-        // --- DOM Elements ---
-        const siteSelect = document.getElementById('site-select');
-        const filterInput = document.getElementById('kv-filter');
-        const bulkEditBtn = document.getElementById('bulk-edit-btn');
-        const tableBody = document.getElementById('kv-entries');
-        const statusArea = document.getElementById('status-area');
+// Removed handleAdminUI (lines 601-632)
 
-        // --- Utility Functions ---
-        function getAuthToken() {
-            return localStorage.getItem('adminToken');
-        }
-
-        function logout() {
-            localStorage.removeItem('adminToken');
-            window.location.href = '/admin/login';
-        }
-
-        function showStatus(message, type = 'loading') {
-            statusArea.innerHTML = \`<div class="status-message status-\${type}">\${message}</div>\`;
-        }
-
-        function clearStatus() {
-            statusArea.innerHTML = '';
-        }
-
-        // --- API Fetch Wrapper ---
-        async function authFetch(url, options = {}) {
-            const token = getAuthToken();
-            if (!token) {
-                logout(); // Redirect if no token
-                return Promise.reject('No auth token found');
-            }
-
-            const headers = {
-                'Content-Type': 'application/json',
-                'Authorization': \`Bearer \${token}\`,
-                ...(options.headers || {})
-            };
-
-            try {
-                const response = await fetch(url, { ...options, headers });
-
-                if (response.status === 401) {
-                    logout(); // Token expired or invalid
-                    return Promise.reject('Unauthorized');
-                }
-
-                if (!response.ok) {
-                    let errorText = \`HTTP error! status: \${response.status}\`;
-                    try {
-                        const errorData = await response.json();
-                        errorText = errorData.error || errorText;
-                    } catch (e) {
-                        // Ignore if response is not JSON
-                    }
-                    throw new Error(errorText);
-                }
-
-                // Handle cases where response might be empty (e.g., DELETE)
-                const contentType = response.headers.get("content-type");
-                if (contentType && contentType.indexOf("application/json") !== -1) {
-                    const data = await response.json();
-                    if (!data.success) {
-                        throw new Error(data.error || 'API request failed');
-                    }
-                    return data.data; // Return only the data part
-                } else {
-                    return { success: true }; // Assume success for non-JSON responses if status is OK
-                }
-            } catch (error) {
-                console.error('Fetch error:', error);
-                showStatus(\`API Error: \${error.message}\`, 'error');
-                throw error; // Re-throw error for further handling if needed
-            }
-        }
-
-        // --- UI Rendering ---
-        function renderTable(data) {
-            tableBody.innerHTML = ''; // Clear existing rows
-
-            if (!data || data.length === 0) {
-                const row = document.createElement('tr');
-                row.innerHTML = '<td colspan="3">No entries found for this site.</td>';
-                tableBody.appendChild(row);
-                return;
-            }
-
-            data.forEach(entry => {
-                const row = document.createElement('tr');
-                // Ensure value is displayed correctly, even if null/undefined or object
-                let displayValue = 'N/A';
-                if (entry.value !== null && entry.value !== undefined) {
-                    displayValue = typeof entry.value === 'object' ? JSON.stringify(entry.value) : String(entry.value);
-                }
-                // Escape HTML in key and value to prevent XSS
-                const safeKey = entry.name.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                const safeValue = displayValue.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-                row.innerHTML = \`
-                    <td>\${safeKey}</td>
-                    <td>\${safeValue}</td>
-                    <td>
-                        <button class="action-btn edit-btn" onclick="editEntry('\${safeKey}', '\${safeValue}')">Edit</button>
-                        <button class="action-btn delete-btn" onclick="deleteEntry('\${safeKey}')">Delete</button>
-                    </td>
-                \`;
-                tableBody.appendChild(row);
-            });
-        }
-
-        // --- Data Loading & Filtering ---
-        function filterTable() {
-            const filterValue = filterInput.value.toLowerCase();
-            const filteredData = allKVEntries.filter(entry =>
-                entry.name.toLowerCase().includes(filterValue) ||
-                (entry.value && String(entry.value).toLowerCase().includes(filterValue))
-            );
-            renderTable(filteredData);
-        }
-
-        async function loadKVEntries(siteId) {
-            if (!siteId) {
-                tableBody.innerHTML = '<tr><td colspan="3">Please select a site.</td></tr>';
-                allKVEntries = [];
-                return;
-            }
-            currentSiteId = siteId;
-            showStatus(\`Loading KV entries for site: \${siteId}...\`);
-            try {
-                const data = await authFetch(\`/admin/api/kv/list?siteId=\${siteId}\`);
-                allKVEntries = data || [];
-                renderTable(allKVEntries);
-                clearStatus();
-            } catch (error) {
-                // Error status is shown in authFetch
-                tableBody.innerHTML = \`<tr><td colspan="3">Error loading data for site \${siteId}. Check console.</td></tr>\`;
-                allKVEntries = [];
-            }
-        }
-
-        async function initializeSiteSelector() {
-            showStatus('Loading available sites...');
-            try {
-                const sites = await authFetch('/admin/api/sites');
-                siteSelect.innerHTML = ''; // Clear previous options
-
-                if (!sites || sites.length === 0) {
-                     siteSelect.innerHTML = '<option value="">No sites found</option>';
-                     loadKVEntries(null); // Show message
-                     clearStatus();
-                     return;
-                }
-
-                // Populate dropdown
-                sites.forEach(siteId => {
-                    const option = document.createElement('option');
-                    option.value = siteId;
-                    option.textContent = siteId;
-                    siteSelect.appendChild(option);
-                });
-
-                // Set default selection (e.g., 'siteA' if it exists, otherwise the first site)
-                const defaultSite = sites.includes('siteA') ? 'siteA' : sites[0];
-                siteSelect.value = defaultSite;
-
-                // Load initial data for the default site
-                await loadKVEntries(defaultSite);
-                clearStatus();
-
-            } catch (error) {
-                // Error status shown in authFetch
-                siteSelect.innerHTML = '<option value="">Error loading sites</option>';
-                loadKVEntries(null); // Show message
-            }
-        }
-
-        // --- CRUD Operations ---
-        async function editEntry(key, currentValue) {
-            const newValue = prompt(\`Enter new value for \${key}:\`, currentValue);
-            if (newValue !== null) { // Check if user cancelled prompt
-                showStatus(\`Updating key: \${key}...\`);
-                try {
-                    await authFetch(\`/admin/api/kv/\${key}\`, {
-                        method: 'PUT',
-                        body: JSON.stringify({ value: newValue })
-                    });
-                    showStatus(\`Successfully updated key: \${key}\`, 'success');
-                    await loadKVEntries(currentSiteId); // Re-fetch data
-                } catch (error) {
-                    // Error status shown in authFetch
-                }
-            }
-        }
-
-        async function deleteEntry(key) {
-            if (confirm(\`Are you sure you want to delete key: \${key}?\`)) {
-                showStatus(\`Deleting key: \${key}...\`);
-                try {
-                    await authFetch(\`/admin/api/kv/\${key}\`, {
-                        method: 'DELETE'
-                    });
-                    showStatus(\`Successfully deleted key: \${key}\`, 'success');
-                    await loadKVEntries(currentSiteId); // Re-fetch data
-                } catch (error) {
-                    // Error status shown in authFetch
-                }
-            }
-        }
-
-        // --- Event Listeners & Initialization ---
-        document.addEventListener('DOMContentLoaded', () => {
-            if (!getAuthToken()) {
-                logout(); // Redirect to login if no token
-            } else {
-                // Add event listeners
-                siteSelect.addEventListener('change', (event) => {
-                    loadKVEntries(event.target.value);
-                });
-                filterInput.addEventListener('input', filterTable);
-                bulkEditBtn.addEventListener('click', () => showStatus('Bulk Edit functionality not yet implemented.', 'error'));
-
-                // Initialize
-                initializeSiteSelector();
-            }
-        });
-    </script>
-</body>
-</html>`;
 
 /**
- * Handle authentication
- */
-async function handleAuth(request: Request, env: Env): Promise<Response> {
-    const { pathname } = new URL(request.url);
-
-    if (pathname === '/admin/api/auth/login' && request.method === 'POST') {
-        try {
-            const body = await request.json() as LoginRequest;
-            const { username, password } = body;
-
-            console.log('[Auth] Login attempt for username:', username);
-
-            if (!username || !password) {
-                return errorResponse('Username and password are required', 400);
-            }
-
-            // Get stored credentials
-            const storedPassword = await env.PIXEL_CONFIG.get(`auth_${username}`);
-            console.log('[Auth] Checking credentials...');
-
-            if (!storedPassword || storedPassword !== password) {
-                console.log('[Auth] Invalid credentials');
-                return errorResponse('Invalid credentials', 401);
-            }
-
-            console.log('[Auth] Login successful');
-            // Generate a simple token
-            const token = btoa(`${username}:${Date.now()}`);
-            return successResponse<LoginResponse>({ token });
-        } catch (error) {
-            console.error('[Auth] Login error:', error);
-            return errorResponse('Invalid request', 400);
-        }
-    }
-
-    return errorResponse('Not found', 404);
-}
-
-/**
- * Handle admin UI requests
- */
-async function handleAdminUI(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-
-    // Serve login page
-    if (url.pathname === '/admin/login' || url.pathname === '/admin/login/') {
-        console.log('[Admin UI] Serving simplified login page');
-        return new Response(loginHtml, {
-            headers: { 'Content-Type': 'text/html' }
-        });
-    }
-
-    // Serve admin interface (placeholder for now)
-    // TODO: Add check here to redirect to login if no token is present in request headers/cookies
-    console.log('[Admin UI] Serving main admin interface placeholder');
-    return new Response(adminHtml, { // Serve the full admin HTML if not login
-        headers: { 'Content-Type': 'text/html' }
-    });
-}
-
-/**
- * Handle API requests
+ * Handle API requests (requires authentication)
  */
 async function handleAPI(request: AuthenticatedRequest, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const path = url.pathname.replace('/admin/api/', '');
+    const path = url.pathname.substring('/admin/api/'.length); // Remove prefix
+    const siteId = url.searchParams.get('siteId'); // Get siteId for context
 
-    // Handle CORS
-    if (request.method === 'OPTIONS') {
-        return new Response(null, {
-            headers: {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-                'Access-Control-Max-Age': '86400'
-            }
-        });
-    }
+    console.log(`[API] Handling ${request.method} for path: ${path}, Site: ${siteId || 'N/A'}`);
 
-    // Handle auth endpoints explicitly (even though middleware might pass it)
-    if (path.startsWith('auth/')) {
-        return handleAuth(request, env);
-    }
+    // --- KV Operations ---
+    if (path.startsWith('kv/')) {
+        const kvPath = path.substring('kv/'.length);
 
-    // Handle KV operations / Site Config operations
-    try {
-        // Site listing
-        if (path === 'sites' && request.method === 'GET') {
+        // POST /admin/api/kv/bulk-update?siteId=...
+        if (kvPath === 'bulk-update' && request.method === 'POST') {
+            return handleBulkUpdate(request, env); // Removed siteId
+        }
+        // DELETE /admin/api/kv/bulk-delete?siteId=...
+        if (kvPath === 'bulk-delete' && request.method === 'DELETE') {
+            return handleBulkDelete(request, env); // Removed siteId
+        }
+        // POST /admin/api/kv/create-template?siteId=...
+        if (kvPath === 'create-template' && request.method === 'POST') {
+            return handleCreateSiteFromTemplate(request, env); // siteId comes from body
+        }
+
+        // Operations requiring a key: /admin/api/kv/{key}?siteId=...
+        const encodedKey = kvPath; // Keep the original encoded path segment
+        if (!encodedKey) return errorResponse('KV key is required.', 400);
+
+        // Decode the key extracted from the path
+        let decodedKey: string;
+        try {
+            decodedKey = decodeURIComponent(encodedKey);
+        } catch (e) {
+            console.error(`[API] Failed to decode key: ${encodedKey}`, e);
+            return errorResponse('Invalid KV key encoding in URL.', 400);
+        }
+
+
+        switch (request.method) {
+            case 'GET':
+                return handleGetValue(request, env, decodedKey); // Use decodedKey
+            case 'PUT': // Update existing or create new
+                 return handleUpdateValue(request, env, decodedKey); // Use decodedKey
+            case 'POST': // Explicitly create new (alternative to PUT)
+                 // handleCreateValue expects key in body, not path/args
+                 // Assuming POST to /admin/api/kv/ creates a new key based on body content
+                 // This route doesn't use the path key, so no change needed here.
+                 return handleCreateValue(request, env);
+            case 'DELETE':
+                return handleDeleteValue(request, env, decodedKey); // Use decodedKey
+            default:
+                return errorResponse(`Method ${request.method} not allowed for KV operations.`, 405);
+        }
+    } // --- End KV Operations ---
+
+    // --- Config Operations ---
+    if (path.startsWith('config/')) {
+         const configPath = path.substring('config/'.length);
+
+         // GET /admin/api/config/sites
+         if (configPath === 'sites' && request.method === 'GET') {
              return handleListSites(request, env);
-        }
+         }
 
-        // KV Listing
-        if (path === 'kv/list') {
-            return handleListKeys(request, env);
-        }
+         // Operations on a specific site config: /admin/api/config/{siteId}
+         const targetSiteId = configPath;
+         if (!targetSiteId) return errorResponse('Site ID is required for config operations.', 400);
 
-        if (path === 'kv/bulk' && request.method === 'PUT') {
-            return handleBulkUpdate(request, env);
-        }
+         switch (request.method) {
+             case 'GET':
+                 return handleGetSiteConfig(request, env, targetSiteId);
+             case 'PUT': // Update existing
+                 return handleUpdateSiteConfig(request, env, targetSiteId);
+             case 'POST': // Create new
+                 return handleCreateSiteConfig(request, env, targetSiteId);
+             // DELETE might be added later
+             default:
+                 return errorResponse(`Method ${request.method} not allowed for site config operations.`, 405);
+         }
+    } // --- End Config Operations ---
 
-        if (path.startsWith('kv/')) {
-            const key = path.replace('kv/', '');
-            switch (request.method) {
-                case 'GET': return handleGetValue(request, env, key);
-                case 'PUT': return handleUpdateValue(request, env, key);
-                case 'DELETE': return handleDeleteValue(request, env, key);
-                default: return errorResponse('Method not allowed', 405);
-            }
-        }
+    // --- Site Operations (Beyond Config) ---
+    if (path.startsWith('sites/')) {
+        const sitePath = path.substring('sites/'.length);
+        const targetSiteId = sitePath; // Assuming path is /admin/api/sites/{siteId}
 
-        return errorResponse('Not found', 404);
-    } catch (error) {
-        console.error('[Admin API] Error:', error);
-        return errorResponse('Internal server error', 500);
+        if (!targetSiteId) return errorResponse('Site ID is required for site operations.', 400);
+
+        switch (request.method) {
+            case 'DELETE': // Handle site deletion
+                return handleDeleteSite(request, env, targetSiteId);
+            // Add other site-specific methods here (e.g., GET for details) if needed
+            default:
+                return errorResponse(`Method ${request.method} not allowed for site operations.`, 405);
+        }
+    } // --- End Site Operations ---
+
+    // --- KV Listing (Specific Site or All) ---
+    // GET /admin/api/kv-keys?siteId=... (List keys for a specific site)
+    if (path === 'kv-keys' && request.method === 'GET') {
+        return handleListKeys(request, env); // Removed siteId, function reads from query param
     }
+
+
+    console.log(`[API] Path not found: ${path}`);
+    return errorResponse('API endpoint not found.', 404);
 }
+
 
 /**
  * Main admin request handler
  */
 export async function handleAdminRequest(request: Request, env: Env): Promise<Response> {
-    try {
-        const url = new URL(request.url);
-        console.log('[Admin] Request for:', url.pathname);
+  const url = new URL(request.url);
+  const pathname = url.pathname;
+  console.log(`[Admin Router] handleAdminRequest received: ${request.method} ${pathname}`);
 
-        // Handle API requests
-        if (url.pathname.startsWith('/admin/api/')) {
-            console.log('[Admin] Handling API request');
-            // Note: Authentication check happens in src/index.ts *before* calling this for protected API routes
-            const response = await handleAPI(request as AuthenticatedRequest, env);
-            console.log('[Admin] API response status:', response.status);
-            return response;
-        }
+  // 1. Serve Login Page (Public) - Handled by Next.js app now, but keep API endpoint
+  // if (pathname === '/admin/login') {
+  //   console.log('[Admin Router] Serving login page');
+  //   return new Response(loginHtml, { headers: { 'Content-Type': 'text/html' } });
+  // }
 
-        // Handle UI requests
-        console.log('[Admin] Handling UI request');
-        const response = await handleAdminUI(request);
-        console.log('[Admin] UI response status:', response.status);
-        return response;
-    } catch (error) {
-        console.error('[Admin] Error handling request:', error);
-        return new Response('Internal Server Error', {
-            status: 500,
-            headers: {
-                'Content-Type': 'text/plain',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+  // 2. Handle Login API Request (Public)
+  if (pathname === '/admin/api/auth/login' && request.method === 'POST') {
+    console.log('[Admin Router] Handling login API request');
+    // Re-implement or call a dedicated auth handler if needed, using env vars
+     try {
+        const { username, password } = await request.json<LoginRequest>();
+        if (!username || !password) return errorResponse('Username and password required', 400);
+
+        if (username === env.ADMIN_USERNAME && password === env.ADMIN_PASSWORD) {
+            const secret = env.JWT_SECRET;
+            if (!secret) {
+                console.error("JWT_SECRET is not set.");
+                return errorResponse('JWT secret missing', 500);
             }
-        });
+            // Payload structure should match expectations in verifyAuthToken
+            const payload = {
+                sub: username, // Use 'sub' for subject
+                custom: { role: 'admin' }, // Add role
+                exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24) // 24hr expiry
+            };
+            const token = await sign(payload, secret);
+            return successResponse<LoginResponse>({ token });
+        } else {
+            return errorResponse('Invalid credentials', 401);
+        }
+    } catch (error) {
+        console.error("Login error:", error);
+        return errorResponse('Failed to process login', 500);
     }
+  }
+
+  // 3. Handle Authenticated API Requests (Auth checked in index.ts or here)
+  if (pathname.startsWith('/admin/api/')) {
+    console.log('[Admin Router] Handling authenticated API request');
+    // Authentication should be verified here or by middleware before calling handleAPI
+    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+        console.log('[Admin Router] API request missing token.');
+        return errorResponse('Authorization token required.', 401);
+    }
+
+    const authResult = await verifyAuthToken(token, env.JWT_SECRET); // Pass token string and secret
+
+    // verifyAuthToken now returns JWTClaims | null | Response
+    if (authResult instanceof Response) {
+      console.log('[Admin Router] API Auth failed (verifyAuthToken returned Response)');
+      return authResult; // Return error response if auth fails (e.g., secret missing)
+    }
+
+    if (!authResult) {
+        console.log('[Admin Router] API Auth failed (verifyAuthToken returned null - invalid/expired token)');
+        return errorResponse('Invalid or expired token.', 401);
+    }
+
+    // If auth passes, authResult contains the payload; attach it to the request
+    (request as AuthenticatedRequest).jwt = authResult; // authResult is confirmed JWTClaims here
+    console.log('[Admin Router] API Auth success, proceeding to handleAPI');
+    return handleAPI(request as AuthenticatedRequest, env);
+  }
+
+  // --- Development Proxy ---
+  // If ADMIN_DEV_PROXY is true, proxy ALL requests reaching this handler to the Next.js dev server
+  const isAdminDev = env.ADMIN_DEV_PROXY === 'true';
+  if (isAdminDev) {
+    const nextJsDevServer = 'http://localhost:3000'; // Default Next.js dev port
+    // Determine the target path on the Next.js server
+    let targetPathname = url.pathname;
+    if (targetPathname === '/admin') {
+      targetPathname = '/'; // Map /admin requests to the root of the Next.js app
+    }
+
+    // Construct URL using the target path, relative to Next.js root
+    const proxyUrl = new URL(targetPathname, nextJsDevServer);
+
+    // Preserve search params
+    proxyUrl.search = url.search;
+
+    console.log(`[Admin Router] DEV PROXY: Proxying request for ${url.pathname} (to target ${targetPathname}) to Next.js dev server: ${proxyUrl.toString()}`);
+
+    // Clone headers, potentially modify Host header if needed
+    const proxyHeaders = new Headers(request.headers);
+    proxyHeaders.set('Host', new URL(nextJsDevServer).host);
+    // Add any other necessary headers for proxying (e.g., X-Forwarded-For)
+    proxyHeaders.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP') || '');
+    proxyHeaders.set('X-Forwarded-Proto', url.protocol.slice(0, -1));
+
+
+    try {
+      const proxyResponse = await fetch(proxyUrl.toString(), {
+        method: request.method,
+        headers: proxyHeaders,
+        body: request.body,
+        redirect: 'manual', // Let the browser handle redirects
+      });
+
+      console.log(`[Admin Router] DEV PROXY: Received response from Next.js for ${proxyUrl.toString()}: Status ${proxyResponse.status}`);
+
+      // Important: Return the response from the Next.js server directly
+      // Need to clone the response to make headers mutable for CORS
+      const responseToClient = new Response(proxyResponse.body, proxyResponse);
+
+      // Add CORS headers if needed, especially for API routes proxied during dev
+      const origin = request.headers.get('Origin');
+      // Allow requests from the worker's origin during dev proxying
+      if (origin && (['http://localhost:3000', 'http://127.0.0.1:3000', `http://${url.host}`].includes(origin))) {
+           responseToClient.headers.set('Access-Control-Allow-Origin', origin);
+           responseToClient.headers.set('Access-Control-Allow-Credentials', 'true');
+           // Add other necessary CORS headers if requests involve methods other than GET/POST or custom headers
+           responseToClient.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+           responseToClient.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CSRF-Token'); // Adjust as needed
+      }
+
+
+      return responseToClient;
+    } catch (error) {
+      console.error(`[Admin Router] DEV PROXY: Error proxying request to ${nextJsDevServer}:`, error);
+      return new Response('Error proxying request to development server.', { status: 502 });
+    }
+  }
+  // --- End Development Proxy ---
+
+  // --- Production Logic (Only runs if isAdminDev is false) ---
+
+  // 1. Handle Login API Request (Public) - Already handled above if isAdminDev is false
+  // if (pathname === '/admin/api/auth/login' && request.method === 'POST') { ... } // Logic is above
+
+  // 2. Handle Authenticated API Requests - Already handled above if isAdminDev is false
+  // if (pathname.startsWith('/admin/api/')) { ... } // Logic is above
+
+  // 3. Serve Static Assets (Production Only - Placeholder for future)
+  // In a real production setup, static assets would likely be served directly
+  // by Cloudflare Pages or another static hosting solution, not the worker.
+  // This section is a placeholder if the worker needed to serve them.
+  // Example:
+  // if (pathname.startsWith('/admin/static/')) {
+  //   // Logic to serve static files from KV or R2
+  //   console.log(`[Admin Router] Attempting to serve static asset: ${pathname}`);
+  //   // ... implementation needed ...
+  //   return new Response('Static asset serving not implemented', { status: 501 });
+  // }
+
+  // Fallback 404 for production if no routes match *after* checking API routes
+  console.log(`[Admin Router] Path ${pathname} did not match any admin routes (Production). Returning 404.`);
+  return new Response('Not Found', { status: 404 });
 }

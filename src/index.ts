@@ -140,28 +140,27 @@ export default {
       console.log('[Worker] Request URL:', url.toString());
       console.log('[Worker] Request Path:', pathname);
 
-      // Handle admin routes
-      if (pathname === '/admin' || pathname === '/admin/' || isAdminPublicPath(pathname)) {
-        // Only handle /admin, /admin/, /admin/login, /admin/api/*
-        console.log('[Worker] Public or base admin path, routing directly to admin handler');
-        return handleAdminRequest(request, env);
-      }
-      if (pathname.startsWith('/admin/api/')) {
-        // Authenticate and handle protected admin API routes
-        console.log('[Worker] Protected admin API path, authenticating...');
-        const authResult = await authenticateRequest(request, env);
-        if (authResult instanceof Response) {
-          console.log('[Worker] Auth failed or redirected for API');
-          return authResult;
-        }
-        console.log('[Worker] Auth success, handling protected admin API request');
-        const response = await handleAdminRequest(authResult, env);
-        console.log('[Worker] Admin API response status:', response.status);
-        return response;
-      }
-      // Let Wrangler serve all other static assets (including /admin/ui/*)
+      // --- Admin Routing & Dev Proxy ---
+      // Explicitly check the string value and log it
+      const adminDevProxyValue = env.ADMIN_DEV_PROXY;
+      const isAdminDev = adminDevProxyValue === 'true';
+      console.log(`[Worker] Checking ADMIN_DEV_PROXY: Value='${adminDevProxyValue}', IsAdminDev=${isAdminDev}`);
 
-      // Handle CORS preflight requests for API routes
+      // If in dev proxy mode, route ALL requests to the admin handler (which proxies to Next.js)
+      if (isAdminDev) {
+          console.log(`[Worker] DEV PROXY: Routing ${pathname} to admin handler (proxying enabled)`);
+          // handleAdminRequest contains the proxy logic for all paths when isAdminDev is true
+          return handleAdminRequest(request, env);
+      }
+      // If NOT in dev proxy mode, only route /admin/* to the admin handler (for API calls, etc.)
+      else if (!isAdminDev && pathname.startsWith('/admin')) {
+          console.log(`[Worker] Routing ${pathname} to admin handler (production API/assets)`);
+          // handleAdminRequest handles API/assets when not proxying
+          return handleAdminRequest(request, env);
+      }
+      // --- End Admin Routing ---
+
+      // Handle CORS preflight requests for non-admin API routes
       // Added /api/checkout and renamed /api/process-checkout to /api/checkout-rules
       // Added /api/order-details/* for CORS preflight
       // Added /api/order-details for CORS preflight (now POST)
@@ -317,10 +316,13 @@ export default {
 
 
          // --- Map Sticky.io response to OrderConfirmation (Updated based on example) ---
-         const mappedOrder: OrderConfirmation = {
+         // Extend the type to include email, phone, and billingAddress
+         const mappedOrder: OrderConfirmation & { email?: string; phone?: string; billingAddress?: Address } = {
            orderNumbers: stickyData.order_id?.toString() || orderIdStr,
            firstName: stickyData.shipping_first_name || stickyData.billing_first_name || 'N/A',
            lastName: stickyData.shipping_last_name || stickyData.billing_last_name || 'N/A',
+           email: stickyData.email || stickyData.billing_email || undefined, // Add email mapping
+           phone: stickyData.phone || undefined, // Add phone mapping
            shippingAddress: {
              address1: stickyData.shipping_street_address || '',
              address2: stickyData.shipping_street_address2 || undefined,
@@ -328,6 +330,15 @@ export default {
              state: stickyData.shipping_state || '', // Assuming state code (e.g., 'MO')
              country: stickyData.shipping_country || '', // Assuming country code (e.g., 'US')
              zip: stickyData.shipping_postcode || '',
+           },
+           // Add billingAddress mapping
+           billingAddress: {
+             address1: stickyData.billing_street_address || '',
+             address2: stickyData.billing_street_address2 || undefined,
+             city: stickyData.billing_city || '',
+             state: stickyData.billing_state || '',
+             country: stickyData.billing_country || '',
+             zip: stickyData.billing_postcode || '',
            },
            products: (stickyData.products || []).map((item: any) => ({
              product_name: item.name || 'Unknown Product',
@@ -357,6 +368,181 @@ export default {
        }
      }
      // --- End GET Order Details Handler ---
+
+     // --- Handle POST request for Upsell ---
+     else if (pathname === '/api/upsell' && request.method === 'POST') {
+       try {
+         const upsellData = await request.json() as any; // Type assertion for simplicity
+         const { siteId, previousOrderId, offers, shippingId, ipAddress, campaignId, ...trackingParams } = upsellData;
+
+         console.log(`[Worker] Received upsell request for siteId: ${siteId}, previousOrderId: ${previousOrderId}`);
+
+         if (!siteId || !previousOrderId || !offers || !shippingId || !campaignId) {
+           const missing = [
+             !siteId && 'siteId',
+             !previousOrderId && 'previousOrderId',
+             !offers && 'offers',
+             !shippingId && 'shippingId',
+             !campaignId && 'campaignId' // campaignId might come from context or initial order
+           ].filter(Boolean).join(', ');
+           return addCorsHeaders(new Response(JSON.stringify({ success: false, message: `Missing required fields: ${missing}` }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
+         }
+
+         // --- 1. Fetch Sticky.io Credentials & Config ---
+         const stickyBaseUrl = 'https://techcommerceunlimited.sticky.io/api/v1'; // Provided base URL
+         const stickyApiUser = env.STICKY_USERNAME;
+         const stickyApiPass = env.STICKY_PASSWORD;
+
+         if (!stickyApiUser || !stickyApiPass) {
+           console.error('[Worker] Sticky.io API credentials missing in environment secrets for upsell.');
+           throw new Error('Sticky.io API credentials missing');
+         }
+
+         // --- 2. Fetch KV Rules (Placeholder) ---
+         // TODO: Fetch rules like payoutCpa, upsellNormalActions, upsellScrubAction, checkoutScrubPercent
+         const scrubPercentKey = `${siteId}_rule_checkoutScrubPercent`; // Re-use checkout scrub %
+         const payoutCpaKey = `${siteId}_rule_payoutCpa`; // New rule: 1 = checkout only, 2 = checkout + upsell
+         const normalActionsKey = `${siteId}_rule_upsellNormalActions`; // Actions for successful, non-scrubbed upsell
+         const scrubActionKey = `${siteId}_rule_upsellScrubAction`; // Action for successful, scrubbed upsell
+
+         console.log(`[Worker] Fetching KV for Upsell: ${scrubPercentKey}, ${payoutCpaKey}, ${normalActionsKey}, ${scrubActionKey}`);
+
+         const [scrubPercentValue, payoutCpaValue, normalActionKeysValue, scrubActionKeyValue] = await Promise.all([
+            env.PIXEL_CONFIG.get(scrubPercentKey),
+            env.PIXEL_CONFIG.get(payoutCpaKey),
+            env.PIXEL_CONFIG.get(normalActionsKey),
+            env.PIXEL_CONFIG.get(scrubActionKey)
+         ]);
+         const scrubPercent = parseInt(scrubPercentValue || '0');
+         // Default to '2' (fire upsell actions) if payoutCpa rule is missing or invalid
+         const payoutCpa = (payoutCpaValue === "1" || payoutCpaValue === "2") ? payoutCpaValue : "2";
+         const normalActionKeys = JSON.parse(normalActionKeysValue || '[]');
+         const scrubActionKeys = scrubActionKeyValue ? [scrubActionKeyValue] : []; // Assuming single key for scrub action
+
+         console.log(`[Worker] Upsell Rules - Scrub %: ${scrubPercent}, Payout CPA: ${payoutCpa}`);
+
+
+         // --- 3. Construct Sticky.io new_upsell Payload ---
+         // Use confirmed endpoint and payload structure
+         const stickyUpsellUrl = `${stickyBaseUrl}/new_upsell`;
+         const stickyPayload = {
+             previousOrderId: previousOrderId, // Use correct field name
+             shippingId: shippingId,           // Use correct field name
+             campaignId: campaignId,           // Use correct field name
+             ipAddress: ipAddress || request.headers.get('CF-Connecting-IP') || '127.0.0.1', // Use correct field name
+             offers: offers.map((offer: any) => ({ // Use correct structure
+                 offer_id: offer.offer_id,
+                 product_id: offer.product_id,
+                 billing_model_id: offer.billing_model_id,
+                 quantity: offer.quantity || 1
+             })),
+             // Pass through all other tracking/optional params received from the client
+             ...trackingParams
+         };
+
+         console.log(`[Worker] Calling Sticky.io POST: ${stickyUpsellUrl}`);
+         console.log(`[Worker] Sticky.io Upsell Payload: ${JSON.stringify(stickyPayload)}`);
+
+         // --- 4. Call Sticky.io new_upsell API ---
+         const stickyResponse = await fetch(stickyUpsellUrl, {
+           method: 'POST',
+           headers: {
+             'Authorization': 'Basic ' + btoa(`${stickyApiUser}:${stickyApiPass}`),
+             'Content-Type': 'application/json',
+             'Accept': 'application/json'
+           },
+           body: JSON.stringify(stickyPayload)
+         });
+
+         const responseBodyText = await stickyResponse.text();
+         console.log('[Worker] Sticky.io Upsell Response Status:', stickyResponse.status);
+         console.log('[Worker] Sticky.io Upsell Response Body Text:', responseBodyText);
+
+         if (!stickyResponse.ok) {
+            let errorMessage = `Sticky.io Upsell API Error: ${stickyResponse.statusText} (Status: ${stickyResponse.status})`;
+            try {
+                const errorJson = JSON.parse(responseBodyText);
+                errorMessage += ` - ${errorJson.message || errorJson.status || JSON.stringify(errorJson)}`;
+            } catch { errorMessage += ` - ${responseBodyText}`; }
+            console.error(errorMessage);
+            throw new Error(errorMessage);
+         }
+
+         const stickyData = JSON.parse(responseBodyText) as any;
+
+         // Check for API-level success based on confirmed response structure
+         const isStickySuccess = stickyData.response_code === '100' && stickyData.error_found === '0';
+         const newOrderId = stickyData.order_id; // Confirmed field name
+
+         let actionsExecuted: any[] = [];
+         let scrubDecision = 'n/a'; // Not applicable if Sticky failed or payoutCpa=1
+
+         if (isStickySuccess) {
+           console.log(`[Worker] Sticky.io Upsell successful. New Order ID: ${newOrderId}`);
+
+           // --- 5. Check Payout CPA Rule ---
+           if (payoutCpa === "2") {
+             console.log('[Worker] Payout CPA allows upsell actions. Proceeding with scrub check.');
+
+             // --- 6. Apply Scrub Logic ---
+             const isScrub = Math.random() * 100 < scrubPercent;
+             scrubDecision = isScrub ? 'scrub' : 'normal';
+             const actionKeysToExecute = isScrub ? scrubActionKeys : normalActionKeys;
+             console.log(`[Worker] Upsell Scrub Decision: ${scrubDecision}. Actions to check: ${actionKeysToExecute.join(', ')}`);
+
+             // --- 7. Fetch and Execute Actions (Postbacks/Pixels) ---
+             for (const key of actionKeysToExecute) {
+                const actionJson = await env.PIXEL_CONFIG.get(key); // e.g., drivebright_action_everflowUpsellPostback
+                if (actionJson) {
+                  try {
+                    const actionDefinition = JSON.parse(actionJson);
+                    // TODO: Resolve placeholders in actionDefinition using context (orderId, amounts, etc.)
+                    // TODO: Execute the action (e.g., make fetch call for postback)
+                    console.log(`[Worker] Executing Action (Placeholder): ${key}`, actionDefinition);
+                    actionsExecuted.push({ key: key, status: 'executed' }); // Track executed actions
+                  } catch (e) {
+                     console.error(`[Worker] Failed to parse or execute action definition for key ${key}: ${e instanceof Error ? e.message : String(e)}`, actionJson);
+                     actionsExecuted.push({ key: key, status: 'error', error: e instanceof Error ? e.message : String(e) });
+                   }
+                } else {
+                  console.warn(`[Worker] Action definition not found in KV for key ${key}`);
+                  actionsExecuted.push({ key: key, status: 'not_found' });
+                }
+             }
+           } else {
+             console.log('[Worker] Payout CPA is 1. Skipping upsell actions.');
+           }
+         } else {
+           // Handle Sticky.io API error response (decline or other issue)
+           const apiErrorMessage = stickyData.error_message || stickyData.declined_reason || 'Unknown Sticky.io upsell error';
+           console.error(`[Worker] Sticky.io Upsell API returned error: ${apiErrorMessage}`, stickyData);
+           // Return error details to the frontend, but maintain 200 status as the proxy worked
+           const errorResponse = new Response(JSON.stringify({ success: false, message: apiErrorMessage, declined: true, details: stickyData }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+           return addCorsHeaders(errorResponse, request);
+         }
+
+
+         // --- 8. Construct Final Response ---
+         const responsePayload = {
+           success: isStickySuccess, // Reflects Sticky.io success specifically
+           orderId: newOrderId,
+           scrubDecision: scrubDecision, // 'normal', 'scrub', or 'n/a'
+           actionsExecuted: actionsExecuted // Information about which actions were attempted/executed
+         };
+
+         const response = new Response(JSON.stringify(responsePayload), {
+           headers: { 'Content-Type': 'application/json' },
+           status: 200
+         });
+         return addCorsHeaders(response, request);
+
+       } catch (error: any) {
+         console.error('[Worker] Error processing upsell:', error);
+         const response = new Response(JSON.stringify({ success: false, message: `Error processing upsell: ${error.message}` }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+         return addCorsHeaders(response, request);
+       }
+     }
+     // --- End POST Upsell Handler ---
 
       // Handle POST request for the full checkout process (Now at the root path '/')
       else if (pathname === '/' && request.method === 'POST') {
@@ -513,7 +699,87 @@ export default {
             console.error('[Worker] Error calling Sticky.io API:', stickyError);
             // Decide how to handle Sticky.io failure - maybe return error, maybe still fire *some* pixels?
             // For now, return an error.
-            return new Response(`Checkout failed: ${stickyError.message}`, { status: 500 });
+            // Return an error with CORS headers
+            const errorResponse = new Response(JSON.stringify({ success: false, error: `Checkout failed: ${stickyError.message}` }), {
+              status: 500,
+              headers: { 'Content-Type': 'application/json' }
+            });
+            return addCorsHeaders(errorResponse, request);
+          }
+
+          // --- 1.5. Fetch Order Details Immediately After Creation ---
+          let orderDetails: OrderConfirmation & { email?: string; phone?: string; billingAddress?: Address; creditCardType?: string } | null = null;
+          if (stickyOrderId) {
+            try {
+              console.log(`[Worker] Fetching details for newly created order: ${stickyOrderId}`);
+              const stickyBaseUrl = 'https://techcommerceunlimited.sticky.io/api/v1';
+              const stickyApiUser = env.STICKY_USERNAME;
+              const stickyApiPass = env.STICKY_PASSWORD;
+              const orderViewUrl = `${stickyBaseUrl}/order_view`;
+              const orderViewPayload = { order_id: [stickyOrderId] };
+
+              const orderViewResponse = await fetch(orderViewUrl, {
+                method: 'POST',
+                headers: {
+                  'Authorization': 'Basic ' + btoa(`${stickyApiUser}:${stickyApiPass}`),
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json'
+                },
+                body: JSON.stringify(orderViewPayload)
+              });
+
+              const orderViewBodyText = await orderViewResponse.text();
+              console.log('[Worker] Sticky.io Order View Response Status:', orderViewResponse.status);
+              console.log('[Worker] Sticky.io Order View Response Body Text:', orderViewBodyText);
+
+              if (!orderViewResponse.ok) {
+                throw new Error(`Sticky.io order_view API Error: ${orderViewResponse.statusText} (Status: ${orderViewResponse.status}) - ${orderViewBodyText}`);
+              }
+
+              const orderViewData = JSON.parse(orderViewBodyText) as any;
+
+              if (orderViewData.response_code !== '100') {
+                throw new Error(`Sticky.io order_view API Error: ${orderViewData.error_message || 'Unknown error'} (Code: ${orderViewData.response_code})`);
+              }
+
+              // Map response (reuse mapping logic from /api/order-details)
+              orderDetails = {
+                orderNumbers: orderViewData.order_id?.toString() || stickyOrderId,
+                firstName: orderViewData.shipping_first_name || orderViewData.billing_first_name || 'N/A',
+                lastName: orderViewData.shipping_last_name || orderViewData.billing_last_name || 'N/A',
+                email: orderViewData.email || orderViewData.billing_email || undefined,
+                phone: orderViewData.phone || undefined,
+                shippingAddress: {
+                  address1: orderViewData.shipping_street_address || '',
+                  address2: orderViewData.shipping_street_address2 || undefined,
+                  city: orderViewData.shipping_city || '',
+                  state: orderViewData.shipping_state || '',
+                  country: orderViewData.shipping_country || '',
+                  zip: orderViewData.shipping_postcode || '',
+                },
+                billingAddress: {
+                  address1: orderViewData.billing_street_address || '',
+                  address2: orderViewData.billing_street_address2 || undefined,
+                  city: orderViewData.billing_city || '',
+                  state: orderViewData.billing_state || '',
+                  country: orderViewData.billing_country || '',
+                  zip: orderViewData.billing_postcode || '',
+                },
+                products: (orderViewData.products || []).map((item: any) => ({
+                  product_name: item.name || 'Unknown Product',
+                  quantity: parseInt(item.product_qty || '1'),
+                  unitPrice: parseFloat(item.price || '0'),
+                })),
+                shippingFee: parseFloat(orderViewData.totals_breakdown?.shipping ?? orderViewData.shipping_amount ?? '0'),
+                creditCardType: orderViewData.credit_card_type,
+              };
+              console.log('[Worker] Successfully fetched and mapped order details after creation:', orderDetails);
+
+            } catch (orderViewError: any) {
+              console.error('[Worker] Error fetching order details immediately after creation:', orderViewError);
+              // Log the error but don't fail the entire checkout process
+              // The frontend can still proceed, but upsell might need fallback
+            }
           }
 
           // --- 2. Determine Actions based on Rules (Scrub/Normal/Campaign) ---
@@ -648,17 +914,27 @@ export default {
 
           console.log(`[Worker] Checkout successful. Redirecting to: ${redirectUrl.toString()}`);
 
-          // Return a JSON response to the Next.js API route indicating success and the order ID
-          const response = new Response(JSON.stringify({ success: true, orderId: stickyOrderId }), {
+          // Return a JSON response including success, orderId, and the fetched orderDetails
+          const responsePayload = {
+            success: true,
+            orderId: stickyOrderId,
+            orderDetails: orderDetails // Include the fetched details
+          };
+          const response = new Response(JSON.stringify(responsePayload), {
             headers: { 'Content-Type': 'application/json' },
             status: 200
           });
-          console.log('[Worker] Returning successful checkout JSON response:', { status: response.status, headers: Object.fromEntries(response.headers.entries()), body: JSON.stringify({ success: true, orderId: stickyOrderId }) });
+          console.log('[Worker] Returning successful checkout JSON response with order details:', { status: response.status, headers: Object.fromEntries(response.headers.entries()), body: JSON.stringify(responsePayload) });
           return addCorsHeaders(response, request);
 
         } catch (error: any) {
           console.error('[Worker] Error processing checkout:', error);
-          return new Response(`Error processing checkout: ${error.message}`, { status: 500 });
+          // Return error with CORS headers
+          const errorResponse = new Response(JSON.stringify({ success: false, error: `Error processing checkout: ${error.message}` }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+          });
+          return addCorsHeaders(errorResponse, request);
         }
       }
 

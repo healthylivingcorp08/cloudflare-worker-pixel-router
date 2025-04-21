@@ -67,3 +67,18 @@
 [2025-04-17 22:15:00] - Migrated `upsell2.tsx` to `app/upsell2/page.tsx`.
 [2025-04-17 22:37:05] - Migrated `thank-you.tsx` to `app/thank-you/page.tsx`. Completed initial page migration for `drivebright`.
 [2025-04-18 18:50:00] - Completed: Fixed thank you page (`thank-you/page.tsx`) flash of error message by setting initial `isLoading` state to `true`.
+[2025-04-19 10:47:13] - Completed: Explained the request routing logic from `src/index.ts` in `routing_logic.md`.
+[2025-04-19 10:57:19] - Completed cleanup of activeContext.md and confirmed updated memory bank update strategy (log only after confirmed success).
+[2025-04-19 11:40:34] - Modified `CheckoutForm.tsx` to expect `orderDetails` from `/api/checkout` response and added placeholders for storing details in client-side state before redirecting to upsell1.
+[2025-04-20 00:52:00] - **Phase 1 (Admin UI Debug) Completed:** Resolved issues preventing site listing ('drivebright') and KV data loading in the current admin UI. Fixes involved correcting KV key patterns (`siteId:keyName`), site discovery logic (`:enabled` suffix), and JWT role assignment (`role: 'admin'`). Verified functionality by creating 'drivebright' via template button.
+[2025-04-20 00:52:00] - **Phase 2 (Admin UI Enhancement) Planned:** Created `ADMIN_UI_NEXTJS_PLAN.md` detailing steps to rebuild the admin UI using Next.js and Shadcn UI, incorporating features like search, add, and bulk delete. Task paused, ready for continuation.
+[2025-04-20 11:29:07] - Completed implementation of KV pair management (Add, Edit, Delete, Bulk Delete, Filter, Refresh) in the Next.js UI (Phase 2).
+[2025-04-20 18:01:43] - Completed: Integrated `sonner` toast notifications into all KV management dialogs (`CreateSiteDialog`, `AddKVDialog`, `EditKVDialog`, `DeleteKVDialog`) in the Next.js admin UI.
+[2025-04-20 20:08:15] - Successfully fixed `try...catch` block and `authFetch` usage in `CreateSiteDialog.tsx`.
+[2025-04-20 21:20:00] - Completed: Debugged and fixed site creation/listing issues in the Next.js admin UI. Resolved KV inconsistencies (`:enabled` key vs `site_config_` key) and simplified the backend site listing logic in `src/admin/api/config.ts` to rely solely on the `site_config_` prefix.
+[2025-04-20 21:36:00] - Completed & Verified (2025-04-20 21:48:00): `handleCreateSiteConfig` in `src/admin/api/config.ts` correctly loads and uses `config/site_template.json` when creating new sites, ensuring a default structure. No changes were needed.
+[2025-04-20 23:10:00] - Completed: Implemented multi-select functionality for KVTable.tsx as per task requirements.
+[2025-04-20 23:15:00] - Fixed: Added retry logic in KVTable.tsx to handle "Failed to fetch" errors, improving reliability of data fetching.
+[2025-04-20 23:16:00] - Fixed: Added retry limit to fetchKVData in KVTable.tsx to prevent infinite loops during data loading.
+[2025-04-20 23:18:00] - Fixed: Added missing import for useRef in KVTable.tsx to resolve TypeScript error and enable proper retry logic for data fetching.
+[2025-04-20 23:20:00] - Final Fix: Enhanced retry logic in KVTable.tsx to include checks for ongoing loads and better error handling, resolving infinite loop issues during KV data loading.

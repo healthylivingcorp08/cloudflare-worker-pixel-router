@@ -85,3 +85,9 @@ Addresses user concerns about managing a single large JSON file and facilitates 
   - Modified `src/app/api/order-confirmation/route.ts` (Next.js): Changed method, body parsing, and worker call.
   - Modified `src/app/(checkout)/thank-you/page.tsx` (Next.js): Changed fetch method, headers, and body.
 
+
+[2025-04-19 12:13:19] - Confirmed Sticky.io 'new_upsell' API endpoint creates a new order linked to previousOrderId, returning a new order_id for the upsell transaction. This clarifies the behavior for the drivebright site's upsell flow.
+
+[2025-04-19 12:36:33] - Architectural Decision: Moved primary upsell processing logic (including Sticky.io API call, scrub rule application, and conditional pixel firing) from the Next.js frontend API route (`/api/upsell`) to the Cloudflare Worker (`/api/upsell` endpoint). The Next.js route now acts as a simple proxy. This centralizes business logic and leverages KV for configuration.
+
+[2025-04-19 12:44:18] - Refinement: Added `[siteId]_rule_payoutCpa` KV rule to control upsell action execution in the worker. If "1", only checkout actions fire. If "2" (or default), upsell actions fire based on scrub rules after a successful Sticky.io upsell call.

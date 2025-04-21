@@ -18,3 +18,8 @@ A serverless Cloudflare Worker that routes conversion events to different pixels
 - Windows 11 PC (Worker): C:\Users\88Devs\Documents\VsCode\cloudflare-worker-pixel-router
 - Windows 11 PC (Sites): C:\Users\88Devs\Documents\VsCode\tech-ecom\ecommerce-monorepo\sites
 - Windows 10 PC (Worker): C:\Users\STD\Documents\VsCode\server_cloudflare_tech
+## Relationship to `tech-ecom` Monorepo
+
+- Windows 10 PC (Drivebright Site Source): C:\Users\STD\Documents\VsCode\tech-ecom\ecommerce-monorepo\sites\drivebright\src
+
+This Cloudflare Worker Pixel Router is designed as a central component for the e-commerce sites managed within the `tech-ecom` monorepo project (`../tech-ecom/ecommerce-monorepo`). Currently, the plan is for this single worker instance to handle conversion tracking, pixel firing, and CRM integration logic for *all* sites deployed from that monorepo (hosted on Cloudflare Pages). Configuration for all sites is managed centrally via this worker's associated Cloudflare KV namespace. Future scaling might involve multiple worker instances if load requires it.

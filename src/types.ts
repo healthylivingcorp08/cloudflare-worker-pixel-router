@@ -42,6 +42,7 @@ export interface PageConfig {
 export interface SiteConfig {
   scrubPercent: number;
   siteId: string;
+  payout_step?: number; // 1: Single Payout (default), 2: Multiple Payouts (incl. upsells)
   pages: {
     [pageName: string]: PageConfig;
   };
@@ -94,8 +95,21 @@ export interface Env {
   ADMIN_USERNAME?: string; // Optional secret
   ADMIN_PASSWORD?: string; // Optional secret
 
+  JWT_SECRET: string;       // Secret for signing/verifying admin JWTs
+
   // Secret for Encryption
   ENCRYPTION_SECRET?: string; // Added for encryption/decryption
 
+  // KV Namespace for Admin UI Assets (JS, CSS)
+  ADMIN_UI_ASSETS: KVNamespace;
+
+  // Flag for enabling Next.js dev server proxy
+  ADMIN_DEV_PROXY?: string; // Should be 'true' or 'false'/'undefined'
+
   // Other secrets can be added here
+}
+// Simple Key-Value Pair type for Admin UI
+export interface KVPair {
+  key: string;
+  value: string;
 }
