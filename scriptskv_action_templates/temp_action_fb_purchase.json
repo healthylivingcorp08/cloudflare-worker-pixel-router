@@ -1,0 +1,32 @@
+{
+  "type": "server-side",
+  "provider": "facebook_capi",
+  "event_name": "Purchase",
+  "url": "https://graph.facebook.com/v19.0/PARAM:FB_PIXEL_ID/events?access_token=PARAM:FB_ACCESS_TOKEN",
+  "method": "POST",
+  "headers": { "Content-Type": "application/json" },
+  "body_template": {
+    "data": [{
+      "event_name": "Purchase",
+      "event_time": "PARAM:TIMESTAMP_UNIX",
+      "action_source": "website",
+      "user_data": {
+        "em": ["PARAM:USER_EMAIL"],
+        "ph": ["PARAM:USER_PHONE"],
+        "client_ip_address": "PARAM:IP_ADDRESS",
+        "client_user_agent": "PARAM:USER_AGENT",
+        "fbc": "PARAM:FBC",
+        "fbp": "PARAM:FBP"
+      },
+      "custom_data": {
+        "currency": "USD",
+        "value": "PARAM:ORDER_TOTAL",
+        "order_id": "PARAM:ORDER_ID",
+        "content_ids": ["PARAM:PRODUCT_SKU"],
+        "content_type": "product"
+      },
+      "event_source_url": "PARAM:PAGE_URL"
+    }],
+    "test_event_code": "PARAM:FB_TEST_CODE"
+  }
+}

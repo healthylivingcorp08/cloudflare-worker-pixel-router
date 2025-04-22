@@ -3,25 +3,25 @@
 Based on `kv_pixel_fires_checkout_plan.md`.
 
 ## Phase 1: Setup & Configuration
-
--   [ ] **Define KV Namespaces:**
-    -   [ ] Create `PIXEL_STATE` namespace for transaction state.
-    -   [ ] Create `PIXEL_CONFIG` namespace for rules and actions.
--   [ ] **Populate `PIXEL_CONFIG`:**
-    -   [ ] Set `global_scrub_percent`.
-    -   [ ] Set `network_scrub_percent:{affId}` (for relevant networks).
-    -   [ ] Set `affiliate_scrub_percent:{c1}` (for relevant affiliates).
-    -   [ ] Set `normal_campaign_id`.
-    -   [ ] Set `scrub_campaign_id`.
-    -   [ ] Set `payout_steps`.
-    -   [ ] Define `checkoutNormalActions` list.
-    -   [ ] Define `upsell1NormalActions` list.
-    -   [ ] Define `upsell2NormalActions` list.
-    -   [ ] Define `action:FacebookPurchase` template.
-    -   [ ] Define `action:GoogleAnalyticsPurchase` template.
-    -   [ ] Define `action:EverflowPostback` template.
-    -   [ ] Define `action:EverflowConversionPixel` template.
-    -   [ ] Define any other required action templates (e.g., `action:FacebookUpsell`).
+- mark each task as completed when you're finished in this file. 
+-   [X] **Define KV Namespaces:**
+    -   [X] Create `PIXEL_STATE` namespace for transaction state.
+    -   [X] Create `PIXEL_CONFIG` namespace for rules and actions.
+-   [X] **Populate `PIXEL_CONFIG`:**
+    -   [X] Set `global_scrub_percent`.
+    -   [X] Set `network_scrub_percent:{affId}` (for relevant networks).
+    -   [X] Set `affiliate_scrub_percent:{c1}` (for relevant affiliates).
+    -   [X] Set `normal_campaign_id`.
+    -   [X] Set `scrub_campaign_id`.
+    -   [X] Set `payout_steps`.
+    -   [X] Define `checkoutNormalActions` list.
+    -   [X] Define `upsell1NormalActions` list.
+    -   [X] Define `upsell2NormalActions` list.
+    -   [X] Define `action:FacebookPurchase` template.
+    -   [X] Define `action:GoogleAnalyticsPurchase` template.
+    -   [X] Define `action:EverflowPostback` template.
+    -   [X] Define `action:EverflowConversionPixel` template.
+    -   [X] Define any other required action templates (e.g., `action:FacebookUpsell`).
 
 ## Phase 2: Core Logic Implementation
 
@@ -115,3 +115,8 @@ Based on `kv_pixel_fires_checkout_plan.md`.
     -   [ ] Use `targetCampaignId` from `/api/decide-campaign` response for initial Sticky.io call.
     -   [ ] Handle client-side actions returned by worker endpoints (`/`, `/api/upsell`, `/checkout/paypal-return`).
     -   [ ] Update PayPal return URL to point to the worker's `/checkout/paypal-return` endpoint, including the `internal_txn_id`.
+---
+
+## Action Log
+
+*   **2025-04-21:** Generated the initial execution plan checklist based on `kv_pixel_fires_checkout_plan.md` and saved it to this file (`boomerang_execution_plan.md`).

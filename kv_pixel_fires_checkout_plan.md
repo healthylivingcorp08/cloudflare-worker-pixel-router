@@ -48,7 +48,7 @@ This namespace stores the dynamic state for each transaction attempt.
         "sub5": "sub5_val",
         "uid": "user_id_val",
         "source_id": "source_val",
-        "click_id": "xyz789", // EF transaction_id (_ef_transaction_id)
+        "click_id": "xyz789", // Everflow transaction_id (e.g., from EF.urlParameter('transaction_id') or EF.getTransactionId() on frontend)
         "campaignId": "sourceCampaignXYZ", // Original campaignId before potential scrub/remap
         "fbc": "fb.1...", // Facebook click id
         "fbp": "fb.1...", // Facebook browser id
@@ -163,7 +163,7 @@ This namespace stores the rules, settings, and action templates for the pixel ro
         {
           "type": "server-side",
           "provider": "everflow_postback",
-          "url": "https://www.c6orlterk.com/?nid=1318&transaction_id=PARAM:CLICK_ID", // nid=1318 hardcoded as per example
+          "url": "https://www.c6orlterk.com/?nid=1318&transaction_id=PARAM:CLICK_ID", // nid=1318 hardcoded. PARAM:CLICK_ID is the Everflow transaction_id stored in state.
           "method": "GET"
           // Note: triggerActions logic could potentially add amount=PARAM:ORDER_SUBTOTAL&adv1=PARAM:ORDER_ID etc. if needed and if isScrub=false
         }
@@ -249,7 +249,7 @@ The replacement logic will involve looking up the `PARAM:` key and retrieving/ca
 
 ### 6.1. `/api/decide-campaign` (POST)
 
-*   **Input:** JSON body `{ internal_txn_id, affId, c1, c2, click_id, sub1, ..., campaignId, ...otherTrackingParams }`
+*   **Input:** JSON body `{ internal_txn_id, affId, c1, c2, click_id, sub1, ..., campaignId, ...otherTrackingParams }` (Note: `click_id` here is the Everflow `transaction_id` captured from the URL/SDK on the frontend)
 *   **Logic:**
     1.  Fetch scrub rules, `normalCampaignId`, `scrubCampaignId` from `PIXEL_CONFIG`.
     2.  Determine applicable scrub % (`c1` > `affId` > Global).

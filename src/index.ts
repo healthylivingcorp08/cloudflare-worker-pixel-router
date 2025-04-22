@@ -164,7 +164,7 @@ export default {
       // Added /api/checkout and renamed /api/process-checkout to /api/checkout-rules
       // Added /api/order-details/* for CORS preflight
       // Added /api/order-details for CORS preflight (now POST)
-      if (request.method === 'OPTIONS' && (pathname === '/api/checkout' || pathname === '/api/checkout-rules' || pathname === '/api/page-pixels' || pathname === '/api/order-details')) {
+      if (request.method === 'OPTIONS' && (pathname === '/api/checkout' || pathname === '/api/checkout-rules' || pathname === '/api/page-pixels' || pathname === '/api/order-details' || pathname === '/api/decide-campaign')) {
         return handleOptions(request);
       }
 
@@ -496,6 +496,7 @@ export default {
                 if (actionJson) {
                   try {
                     const actionDefinition = JSON.parse(actionJson);
+                    // TODO: Resolve placeholders in actionDefinition using context (orderId, amounts, etc.)
                     // TODO: Resolve placeholders in actionDefinition using context (orderId, amounts, etc.)
                     // TODO: Execute the action (e.g., make fetch call for postback)
                     console.log(`[Worker] Executing Action (Placeholder): ${key}`, actionDefinition);

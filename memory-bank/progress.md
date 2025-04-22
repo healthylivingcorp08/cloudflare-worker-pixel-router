@@ -82,3 +82,5 @@
 [2025-04-20 23:16:00] - Fixed: Added retry limit to fetchKVData in KVTable.tsx to prevent infinite loops during data loading.
 [2025-04-20 23:18:00] - Fixed: Added missing import for useRef in KVTable.tsx to resolve TypeScript error and enable proper retry logic for data fetching.
 [2025-04-20 23:20:00] - Final Fix: Enhanced retry logic in KVTable.tsx to include checks for ongoing loads and better error handling, resolving infinite loop issues during KV data loading.
+[2025-04-21 16:30:00] - Completed: Created Cloudflare KV namespaces `PIXEL_STATE` (id: `0d279ec802c34455863cbd272e55d5d7`) and `PIXEL_CONFIG` (id: `de87977f940b497b85e952b8fee620b3`) via Wrangler CLI and updated `wrangler.toml` with the corresponding bindings for main, dev, and production environments.
+[2025-04-21 17:10:00] - Completed: Populated `PIXEL_CONFIG` KV namespace with initial configuration (scrub rules, campaign IDs, payout steps, action lists, and action templates) via Wrangler CLI. Action templates saved to `scripts/kv_action_templates/` for reference.

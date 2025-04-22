@@ -1,0 +1,5 @@
+{
+  "type": "client-side",
+  "provider": "google_analytics_ga4",
+  "script_template": "gtag('event', 'purchase', { transaction_id: 'PARAM:ORDER_ID', value: PARAM:ORDER_TOTAL, currency: 'USD', items: [{ item_id: 'PARAM:PRODUCT_SKU', item_name: 'PARAM:PRODUCT_NAME', price: PARAM:PRODUCT_PRICE, quantity: PARAM:PRODUCT_QUANTITY }] });"
+}
