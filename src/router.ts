@@ -1,99 +1,88 @@
-import { SiteConfig, PageConfig, PixelRouteResult, ResolutionContext } from './types';
-import { resolvePlaceholders } from './resolvers';
+import { Env } from './types';
+import { ExecutionContext } from '@cloudflare/workers-types';
+import { handleOptions, addCorsHeaders } from './middleware/cors'; // Import CORS handlers
+import { handleAdminRequest } from './admin/router'; // Import the admin router
+
+// Import API Handlers
+import { handleCheckout } from './handlers/checkout';
+import { handleUpsell } from './handlers/upsell';
+import { handlePagePixels } from './handlers/pagePixels';
+import { handleOrderDetails } from './handlers/orderDetails';
+import { handleDecideCampaign } from './handlers/decideCampaign';
+import { handlePaypalReturn } from './handlers/paypalReturn'; // Added PayPal return handler
 
 /**
- * Extract the page name from the URL path
- * @param path URL path (e.g., "/checkout/", "/upsell1/")
+ * Main request router for the Cloudflare Worker.
+ * Delegates requests to specific handlers based on path and method.
  */
-function getPageFromPath(path: string): string {
-  // Remove leading and trailing slashes, get the first segment
-  const cleanPath = path.replace(/^\/|\/$/g, '');
-  const segments = cleanPath.split('/');
-  return segments[0] || 'landing'; // Default to landing if no path
-}
+export async function routeRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+    const pathname = url.pathname;
+    const method = request.method;
 
-/**
- * Determine if this request should be scrubbed based on site's scrub percentage
- * @param config Site configuration
- * @returns boolean indicating if the request should be scrubbed
- */
-function shouldScrubRequest(config: SiteConfig): boolean {
-  const rand = Math.random() * 100;
-  return rand < config.scrubPercent;
-}
+    console.log(`[Router] Received ${method} request for ${pathname}`);
 
-/**
- * Route the request to appropriate pixels and API endpoints based on site/page config
- * @param config Site configuration
- * @param path Request path
- * @param context Resolution context for placeholders
- */
-export async function routePixel(
-  config: SiteConfig,
-  path: string,
-  context: ResolutionContext
-): Promise<PixelRouteResult> {
-  // Determine which page we're on
-  const pageName = getPageFromPath(path);
-  
-  // Get page config
-  const pageConfig = config.pages[pageName];
-  if (!pageConfig) {
-    throw new Error(`No configuration found for page: ${pageName}`);
-  }
+    try {
+        // --- Handle OPTIONS requests for CORS preflight ---
+        const apiOptionsPaths = [
+            '/', // For checkout
+            '/api/checkout', // Explicit checkout path (if used)
+            '/api/upsell',
+            '/api/page-pixels',
+            '/api/order-details',
+            '/api/decide-campaign',
+            '/checkout/paypal-return' // Added PayPal return path for CORS
+        ];
+        if (method === 'OPTIONS' && (apiOptionsPaths.includes(pathname) || pathname.startsWith('/admin'))) {
+            console.log(`[Router] Handling OPTIONS for ${pathname}`);
+            return handleOptions(request); // Use the dedicated OPTIONS handler
+        }
 
-  // Determine if this request should be scrubbed
-  const shouldScrub = shouldScrubRequest(config);
+        // --- Handle Admin Routes ---
+        if (pathname.startsWith('/admin')) {
+            console.log(`[Router] Delegating to Admin Router for ${pathname}`);
+            return await handleAdminRequest(request, env);
+        }
 
-  // If we're scrubbing, return empty arrays for pixels and endpoints
-  if (shouldScrub) {
-    return {
-      pixels: [],
-      apiEndpoints: [],
-      shouldScrub: true
-    };
-  }
+        // --- Handle API Routes ---
+        if (pathname === '/' && method === 'POST') {
+            console.log(`[Router] Routing to Checkout Handler`);
+            return await handleCheckout(request, env, ctx);
+        }
+        else if (pathname === '/api/decide-campaign' && method === 'POST') {
+            console.log(`[Router] Routing to Decide Campaign Handler`);
+            return await handleDecideCampaign(request, env, ctx);
+        }
+        else if (pathname === '/api/order-details' && method === 'POST') {
+            console.log(`[Router] Routing to Order Details Handler`);
+            return await handleOrderDetails(request, env, ctx);
+        }
+        else if (pathname === '/api/upsell' && method === 'POST') {
+            console.log(`[Router] Routing to Upsell Handler`);
+            return await handleUpsell(request, env, ctx);
+        }
+        else if (pathname === '/api/page-pixels' && method === 'GET') {
+            console.log(`[Router] Routing to Page Pixels Handler`);
+            return await handlePagePixels(request, env, ctx);
+        }
+        else if (pathname === '/checkout/paypal-return' && method === 'GET') {
+            console.log(`[Router] Routing to PayPal Return Handler`);
+            return await handlePaypalReturn(request, env, ctx);
+        }
 
-  // Resolve all placeholders in the configuration
-  const resolvedConfig = await resolvePlaceholders<PageConfig>(pageConfig, context);
+        // --- Fallback for unhandled routes ---
+        console.log(`[Router] No route matched for ${method} ${pathname}`);
+        const notFoundResponse = new Response('Not Found', { status: 404 });
+        // Add CORS headers even to 404s if the origin is allowed, helps debugging frontend issues
+        return addCorsHeaders(notFoundResponse, request);
 
-  return {
-    pixels: resolvedConfig.pixels,
-    apiEndpoints: resolvedConfig.apiEndpoints,
-    shouldScrub: false
-  };
-}
-
-/**
- * Generate HTML for a pixel based on its configuration
- * @param pixel Resolved pixel configuration
- */
-export function generatePixelHtml(pixel: any): string {
-  switch (pixel.type) {
-    case 'everflow_click':
-      return `
-<script type="text/javascript" src="https://www.c6orlterk.com/scripts/sdk/everflow.js"></script>
-<script type="text/javascript">
-EF.click({
-    offer_id: '${pixel.config.offer_id}',
-    affiliate_id: '${pixel.config.affiliate_id}'${
-      Object.entries(pixel.config.parameterMapping || {})
-        .map(([key, value]) => `,\n    ${key}: '${value}'`)
-        .join('')
+    } catch (error: any) {
+        console.error(`[Router] Uncaught error processing ${method} ${pathname}:`, error);
+        // Generic error response with CORS
+        const errorResponse = new Response(JSON.stringify({ message: `Internal Server Error: ${error.message}` }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
+        });
+        return addCorsHeaders(errorResponse, request);
     }
-});
-</script>`;
-
-    case 'everflow_conversion':
-      return `
-<script type="text/javascript" src="https://www.c6orlterk.com/scripts/sdk/everflow.js"></script>
-<script type="text/javascript">
-EF.conversion({
-    offer_id: ${pixel.config.offer_id}
-});
-</script>`;
-
-    default:
-      throw new Error(`Unknown pixel type: ${pixel.type}`);
-  }
 }

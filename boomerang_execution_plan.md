@@ -25,68 +25,68 @@ Based on `kv_pixel_fires_checkout_plan.md`.
 
 ## Phase 2: Core Logic Implementation
 
--   [ ] **Implement `/api/decide-campaign` Endpoint:**
-    -   [ ] Read input parameters (`internal_txn_id`, tracking params).
-    -   [ ] Fetch scrub rules and campaign IDs from `PIXEL_CONFIG`.
-    -   [ ] Implement scrub percentage calculation logic.
-    -   [ ] Determine `isScrub` and `targetCampaignId`.
-    -   [ ] Construct initial `PIXEL_STATE` KV entry.
-    -   [ ] Write state to KV with TTL.
-    -   [ ] Return `targetCampaignId`.
--   [ ] **Implement Parameter Population Utility:**
-    -   [ ] Create function `populateParameters(template, dataSources)`.
-    -   [ ] Implement logic to replace `PARAM:` placeholders using `PIXEL_STATE`, Sticky.io data, request object, and environment variables.
-    -   [ ] Handle missing parameters gracefully.
-    -   [ ] Include necessary data transformations (e.g., timestamp formats, phone normalization if needed).
--   [ ] **Implement Action Triggering Helpers:**
-    -   [ ] Create `triggerInitialActions` function:
-        -   [ ] Read state from `PIXEL_STATE`.
-        -   [ ] Implement idempotency check (`processed_Initial`).
-        -   [ ] Update KV state (mark processed, set status/timestamp).
-        -   [ ] Fetch `payout_steps`.
-        -   [ ] Check if `payout_steps >= 1`.
-        -   [ ] Fetch relevant action keys and definitions from `PIXEL_CONFIG`.
-        -   [ ] Call `populateParameters` for each action.
-        -   [ ] Execute server-side actions asynchronously (`context.waitUntil`).
-        -   [ ] Return client-side action scripts.
-    -   [ ] Create `triggerUpsellActions` function:
-        -   [ ] Read state from `PIXEL_STATE`.
-        -   [ ] Implement idempotency check (step-specific flag, e.g., `processed_Upsell_1`).
-        -   [ ] Update KV state (mark step processed, set timestamp).
-        -   [ ] Fetch relevant action keys and definitions from `PIXEL_CONFIG`.
-        -   [ ] Call `populateParameters` for each action.
-        -   [ ] Execute server-side actions asynchronously (`context.waitUntil`).
-        -   [ ] Return client-side action scripts.
--   [ ] **Implement `/` (Checkout Proxy & Card Confirmation) Endpoint:**
-    -   [ ] Read input payload, `targetCampaignId`, `internal_txn_id`.
-    -   [ ] Determine payment method.
-    -   [ ] Update `PIXEL_STATE` with payment method.
-    -   [ ] Construct Sticky.io `NewOrder` payload.
-    -   [ ] Call Sticky.io `NewOrder` API.
-    -   [ ] Update `PIXEL_STATE` with `stickyOrderId_Initial`.
-    -   [ ] Handle Card Success: Call `triggerInitialActions`, return success + client actions.
-    -   [ ] Handle Card Failure: Update `PIXEL_STATE`, return error.
-    -   [ ] Handle PayPal Redirect: Update `PIXEL_STATE`, return redirect info.
-    -   [ ] Handle PayPal Failure: Update `PIXEL_STATE`, return error.
--   [ ] **Implement `/checkout/paypal-return` Endpoint:**
-    -   [ ] Read `internal_txn_id` from query params.
-    -   [ ] Read state from `PIXEL_STATE`. Handle errors/already processed.
-    -   [ ] Call Sticky.io `order_view` API using `stickyOrderId_Initial`.
-    -   [ ] Check `order_view` response for success.
-    -   [ ] Handle Success: Call `triggerInitialActions`, prepare redirect to confirmation page.
-    -   [ ] Handle Failure/Pending: Update `PIXEL_STATE`, redirect to error/pending page.
--   [ ] **Implement `/api/upsell` Endpoint:**
-    -   [ ] Read input payload, `internal_txn_id`.
-    -   [ ] Read initial state from `PIXEL_STATE`.
-    -   [ ] Determine `currentUpsellStep`.
-    -   [ ] Fetch `payout_steps` and campaign IDs from `PIXEL_CONFIG`.
-    -   [ ] Get initial `isScrub` from state.
-    -   [ ] Determine `targetUpsellCampaignId` based on initial `isScrub`.
-    -   [ ] Construct Sticky.io `new_upsell` payload.
-    -   [ ] Call Sticky.io `new_upsell` API.
-    -   [ ] Update `PIXEL_STATE` with `stickyOrderId_Upsell_{N}`.
-    -   [ ] Handle Success: Check `payout_steps`, call `triggerUpsellActions` if applicable, return success + client actions.
-    -   [ ] Handle Failure: Return error.
+-   [X] **Implement `/api/decide-campaign` Endpoint:**
+    -   [X] Read input parameters (`internal_txn_id`, tracking params).
+    -   [X] Fetch scrub rules and campaign IDs from `PIXEL_CONFIG`.
+    -   [X] Implement scrub percentage calculation logic.
+    -   [X] Determine `isScrub` and `targetCampaignId`.
+    -   [X] Construct initial `PIXEL_STATE` KV entry.
+    -   [X] Write state to KV with TTL (using `waitUntil`).
+    -   [X] Return `targetCampaignId`.
+-   [X] **Implement Parameter Population Utility:**
+    -   [X] Create function `populateParameters(template, dataSources)`.
+    -   [X] Implement logic to replace `PARAM:` placeholders using `PIXEL_STATE`, Sticky.io data, request object, and environment variables.
+    -   [X] Handle missing parameters gracefully.
+    -   [X] Include necessary data transformations (e.g., timestamp formats, phone normalization if needed).
+-   [X] **Implement Action Triggering Helpers:**
+    -   [X] Create `triggerInitialActions` function:
+        -   [X] Read state from `PIXEL_STATE`.
+        -   [X] Implement idempotency check (`processed_Initial`).
+        -   [X] Update KV state (mark processed, set status/timestamp).
+        -   [X] Fetch `payout_steps`.
+        -   [X] Check if `payout_steps >= 1`.
+        -   [X] Fetch relevant action keys and definitions from `PIXEL_CONFIG`.
+        -   [X] Call `populateParameters` for each action.
+        -   [X] Execute server-side actions asynchronously (`context.waitUntil`).
+        -   [X] Return client-side action scripts.
+    -   [X] Create `triggerUpsellActions` function:
+        -   [X] Read state from `PIXEL_STATE`.
+        -   [X] Implement idempotency check (step-specific flag, e.g., `processed_Upsell_1`).
+        -   [X] Update KV state (mark step processed, set timestamp).
+        -   [X] Fetch relevant action keys and definitions from `PIXEL_CONFIG`.
+        -   [X] Call `populateParameters` for each action.
+        -   [X] Execute server-side actions asynchronously (`context.waitUntil`).
+        -   [X] Return client-side action scripts.
+-   [X] **Implement `/` (Checkout Proxy & Card Confirmation) Endpoint:**
+    -   [X] Read input payload, `targetCampaignId`, `internal_txn_id`.
+    -   [X] Determine payment method.
+    -   [X] Update `PIXEL_STATE` with payment method.
+    -   [X] Construct Sticky.io `NewOrder` payload.
+    -   [X] Call Sticky.io `NewOrder` API.
+    -   [X] Update `PIXEL_STATE` with `stickyOrderId_Initial`.
+    -   [X] Handle Card Success: Call `triggerInitialActions`, return success + client actions.
+    -   [X] Handle Card Failure: Update `PIXEL_STATE`, return error.
+    -   [X] Handle PayPal Redirect: Update `PIXEL_STATE`, return redirect info.
+    -   [X] Handle PayPal Failure: Update `PIXEL_STATE`, return error.
+-   [X] **Implement `/checkout/paypal-return` Endpoint:**
+    -   [X] Read `internal_txn_id` from query params.
+    -   [X] Read state from `PIXEL_STATE`. Handle errors/already processed.
+    -   [X] Call Sticky.io `order_view` API using `stickyOrderId_Initial`.
+    -   [X] Check `order_view` response for success.
+    -   [X] Handle Success: Call `triggerInitialActions`, prepare redirect to confirmation page.
+    -   [X] Handle Failure/Pending: Update `PIXEL_STATE`, redirect to error/pending page.
+-   [X] **Implement `/api/upsell` Endpoint:**
+    -   [X] Read input payload, `internal_txn_id`.
+    -   [X] Read initial state from `PIXEL_STATE`.
+    -   [X] Determine `currentUpsellStep`.
+    -   [X] Fetch `payout_steps` and campaign IDs from `PIXEL_CONFIG`.
+    -   [X] Get initial `isScrub` from state.
+    -   [X] Determine `targetUpsellCampaignId` based on initial `isScrub`.
+    -   [X] Construct Sticky.io `new_upsell` payload.
+    -   [X] Call Sticky.io `new_upsell` API.
+    -   [X] Update `PIXEL_STATE` with `stickyOrderId_Upsell_{N}`.
+    -   [X] Handle Success: Check `payout_steps`, call `triggerUpsellActions` if applicable, return success + client actions.
+    -   [X] Handle Failure: Return error.
 
 ## Phase 3: Testing & Deployment
 
@@ -120,3 +120,6 @@ Based on `kv_pixel_fires_checkout_plan.md`.
 ## Action Log
 
 *   **2025-04-21:** Generated the initial execution plan checklist based on `kv_pixel_fires_checkout_plan.md` and saved it to this file (`boomerang_execution_plan.md`).
++*   **2025-04-21:** Implemented `triggerInitialActions` and `triggerUpsellActions` helpers in `src/actions.ts`. Updated `src/utils/parameters.ts` and `src/types.ts` for type compatibility. Marked task as complete in plan.
++*   **2025-04-21:** Updated existing `/api/decide-campaign` endpoint logic in `src/index.ts` to use `ctx.waitUntil()` for KV write. Marked task as complete in plan.
++*   **2025-04-21:** Implemented `POST /` endpoint in `src/index.ts` for checkout proxy (Card & PayPal initiation), including Sticky.io `NewOrder` call and `triggerInitialActions`. Marked task as complete in plan.
