@@ -29,7 +29,8 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
         // Use 'any' for flexibility, assuming frontend sends expected structure
         const requestBody = await request.json() as any;
         const { internal_txn_id, targetCampaignId, paymentMethod, ...checkoutPayload } = requestBody;
-        const ipAddress = request.headers.get('CF-Connecting-IP') || '';
+        // Use 127.0.0.1 as fallback if CF-Connecting-IP is missing, as Sticky.io rejects empty strings.
+        const ipAddress = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
         const userAgent = request.headers.get('User-Agent') || '';
 
         if (!internal_txn_id || !targetCampaignId) {
