@@ -3,21 +3,36 @@ import { ExecutionContext } from '@cloudflare/workers-types';
 import { addCorsHeaders } from '../middleware/cors';
 
 /**
- * Handles GET requests to /api/page-pixels.
- * Fetches pixel configurations associated with a specific site and page name from KV.
+ * Handles POST requests to /api/page-pixels.
+ * Fetches pixel configurations associated with a specific site and page name (derived from URL) from KV.
  */
 export async function handlePagePixels(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
-    const url = new URL(request.url);
-    const siteId = url.searchParams.get('siteId');
-    const pageName = url.searchParams.get('pageName');
+    // Read data from POST body
+    const body = await request.json() as { siteId?: string; url?: string; [key: string]: any };
+    const siteId = body.siteId;
+    const requestUrl = body.url;
 
-    if (!siteId || !pageName) {
+    if (!siteId || !requestUrl) {
       // Return CORS headers even for errors
-      return addCorsHeaders(new Response('Missing siteId or pageName query parameter', { status: 400 }), request);
+      return addCorsHeaders(new Response('Missing siteId or url in request body', { status: 400 }), request);
     }
 
-    console.log(`[PagePixelsHandler] Fetching pixels for siteId: ${siteId}, page: ${pageName}`);
+    // Determine pageName from the URL path
+    let pageName = 'unknown';
+    try {
+        const parsedUrl = new URL(requestUrl);
+        // Basic logic: use the last part of the path, or 'home' for root
+        const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
+        pageName = pathSegments.pop() || 'home';
+        // TODO: Add more robust page name mapping logic if needed (e.g., based on specific paths)
+    } catch (e) {
+        console.error(`[PagePixelsHandler] Invalid URL provided in body: ${requestUrl}`, e);
+        return addCorsHeaders(new Response('Invalid URL provided in request body', { status: 400 }), request);
+    }
+
+
+    console.log(`[PagePixelsHandler] Fetching pixels for siteId: ${siteId}, derived page: ${pageName} (from URL: ${requestUrl})`);
 
     // Fetch the pixel configuration keys for the specific page
     const pagePixelKeysKey = `${siteId}_page_${pageName}_pixels`; // e.g., drivebright_page_presell_pixels

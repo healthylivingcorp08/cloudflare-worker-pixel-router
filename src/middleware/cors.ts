@@ -3,8 +3,8 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'https://space-7z6.pages.dev', // Example production frontend origin
-  'http://127.0.0.1:8787' // Wrangler dev server origin
-  // Add other allowed origins here
+  'http://127.0.0.1:8787', // Wrangler dev server origin
+  'http://localhost:3001' // Drivebright local dev origin
 ];
 
 /**

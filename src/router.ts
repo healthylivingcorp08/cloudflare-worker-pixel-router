@@ -92,7 +92,7 @@ export async function routeRequest(request: Request, env: Env, ctx: ExecutionCon
             console.log(`[Router] Routing to Upsell Handler`);
             return await handleUpsell(request, env, ctx);
         }
-        else if (pathname === '/api/page-pixels' && method === 'GET') {
+        else if (pathname === '/api/page-pixels' && method === 'POST') { // Changed method to POST
             console.log(`[Router] Routing to Page Pixels Handler`);
             return await handlePagePixels(request, env, ctx);
         }

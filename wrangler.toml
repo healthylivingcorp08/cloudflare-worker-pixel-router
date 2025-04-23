@@ -16,7 +16,9 @@ id = "0d279ec802c34455863cbd272e55d5d7"
 
 # Development environment
 [env.dev]
-vars = { ENVIRONMENT = "dev" }
+[env.dev.vars]
+ENVIRONMENT = "dev"
+ENCRYPTION_SECRET = "123" # !!! REPLACE THIS WITH A REAL SECRET !!!
 
 [[env.dev.kv_namespaces]]
 binding = "PIXEL_CONFIG"

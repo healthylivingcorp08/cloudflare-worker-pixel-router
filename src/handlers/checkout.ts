@@ -2,8 +2,19 @@ import { Env, PixelState, PaymentData, StickyPayload, EncryptedData } from '../t
 import { ExecutionContext } from '@cloudflare/workers-types';
 import { addCorsHeaders } from '../middleware/cors';
 import { callStickyNewOrder } from '../lib/sticky';
-import { decryptData } from '../utils/encryption'; // Assuming decryptData is moved here
+import { decryptData } from '../utils/encryption'; // Keep for potential future use, but not used in this change
 import { triggerInitialActions } from '../actions'; // Assuming triggerInitialActions is moved here
+
+// Helper function to determine card type from number (returns uppercase)
+function getCardType(cardNumber: string): string {
+	if (!cardNumber) return 'UNKNOWN';
+	if (cardNumber.startsWith('4')) return 'VISA';
+	if (/^5[1-5]/.test(cardNumber)) return 'MASTER'; // Assuming Sticky uses MASTER for Mastercard
+	if (/^3[47]/.test(cardNumber)) return 'AMEX';
+	if (/^6(?:011|5)/.test(cardNumber)) return 'DISCOVER';
+	// Add other card types as needed (ensure they match Sticky.io expected values)
+	return 'UNKNOWN';
+}
 
 /**
  * Handles POST requests to / (main checkout endpoint).
@@ -15,7 +26,8 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
 
     try {
         console.log('[CheckoutHandler] Received request');
-        const requestBody = await request.json() as any; // Use 'any' for flexibility
+        // Use 'any' for flexibility, assuming frontend sends expected structure
+        const requestBody = await request.json() as any;
         const { internal_txn_id, targetCampaignId, paymentMethod, ...checkoutPayload } = requestBody;
         const ipAddress = request.headers.get('CF-Connecting-IP') || '';
         const userAgent = request.headers.get('User-Agent') || '';
@@ -30,12 +42,14 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
 
         // 1. Determine Payment Method
         let determinedPaymentMethod: 'card' | 'paypal' | null = null;
+        // Check top-level field first (might be used by PayPal return?)
         if (paymentMethod === 'paypal') {
             determinedPaymentMethod = 'paypal';
-        } else if (checkoutPayload.payment?.cardType || checkoutPayload.payment?.encryptedCard) {
+        // Check the method field within the payment object sent by the client
+        } else if (checkoutPayload.payment?.method === 'credit_card') {
             determinedPaymentMethod = 'card';
         } else {
-            console.error(`[CheckoutHandler] Could not determine payment method for ${internal_txn_id}`);
+            console.error(`[CheckoutHandler] Could not determine payment method for ${internal_txn_id}. Body:`, JSON.stringify(requestBody));
             return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Could not determine payment method.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
         }
         console.log(`[CheckoutHandler] Determined payment method: ${determinedPaymentMethod}`);
@@ -55,67 +69,104 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
         );
         console.log(`[CheckoutHandler] Updated paymentMethod_Initial to ${determinedPaymentMethod} for ${internal_txn_id}`);
 
-        // 3. Decrypt Card Details if necessary
-        let paymentDataForSticky: PaymentData | undefined;
+        // 3. Prepare Payment Details for Sticky Payload
+        let paymentFieldsForSticky: Record<string, any> = {}; // Initialize empty object for payment fields
         if (determinedPaymentMethod === 'card' && checkoutPayload.payment) {
-            if (!env.ENCRYPTION_SECRET) {
-                console.error(`[CheckoutHandler] ENCRYPTION_SECRET is not configured for ${internal_txn_id}.`);
-                return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Server configuration error [Encryption].' }), { status: 500, headers: { 'Content-Type': 'application/json' } }), request);
+            // --- Using RAW card details from payload (INSECURE - FOR LOCAL TESTING ONLY) ---
+            console.warn(`[CheckoutHandler] Using RAW card details from payload for ${internal_txn_id}. THIS IS INSECURE.`);
+            const paymentFromPayload: PaymentData = checkoutPayload.payment;
+
+            if (
+                !paymentFromPayload.cardNumber ||
+                !paymentFromPayload.expirationMonth ||
+                !paymentFromPayload.expirationYear ||
+                !paymentFromPayload.cvv
+            ) {
+                console.error(`[CheckoutHandler] Missing raw payment details in payload for ${internal_txn_id}`);
+                return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Missing payment details.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
             }
 
-            const paymentToDecrypt: PaymentData = { ...checkoutPayload.payment };
-            paymentDataForSticky = { cardType: paymentToDecrypt.cardType };
+            const rawCardNumber = paymentFromPayload.cardNumber.replace(/\s/g, ''); // Ensure no spaces
+            const rawMonth = paymentFromPayload.expirationMonth.padStart(2, '0');
+            const rawYear = paymentFromPayload.expirationYear.slice(-2); // Get last 2 digits
+            const rawExpiryMMYY = `${rawMonth}${rawYear}`;
+            const rawCvv = paymentFromPayload.cvv;
 
-            try {
-                if (paymentToDecrypt.encryptedCard) {
-                    const decryptedCard = await decryptData(paymentToDecrypt.encryptedCard as unknown as EncryptedData, env);
-                    if (typeof decryptedCard !== 'string') throw new Error('Decrypted card number is not a string');
-                    paymentDataForSticky.creditCardNumber = decryptedCard;
-                }
-                if (paymentToDecrypt.encryptedExpiry) {
-                    const decryptedExpiry = await decryptData(paymentToDecrypt.encryptedExpiry as unknown as EncryptedData, env);
-                    if (typeof decryptedExpiry !== 'string') throw new Error('Decrypted expiry is not a string');
-                    paymentDataForSticky.expirationDate = decryptedExpiry.replace('/', '');
-                }
-                if (paymentToDecrypt.encryptedCvv) {
-                    const decryptedCvv = await decryptData(paymentToDecrypt.encryptedCvv as unknown as EncryptedData, env);
-                    if (typeof decryptedCvv !== 'string') throw new Error('Decrypted CVV is not a string');
-                    paymentDataForSticky.CVV = decryptedCvv;
-                }
-                console.log(`[CheckoutHandler] Card details decrypted for ${internal_txn_id}`);
-            } catch (decryptionError: any) {
-                console.error(`[CheckoutHandler] Failed to decrypt card details for ${internal_txn_id}: ${decryptionError.message}`);
-                return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Invalid payment details provided.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
-            }
+            // DEBUG: Log the raw values being prepared for Sticky
+            console.log(`[CheckoutHandler] Preparing payment data for Sticky: Card=${rawCardNumber}, Expiry=${rawExpiryMMYY}, CVV=${rawCvv}`);
+
+            // Assign fields directly to the paymentFieldsForSticky object
+            paymentFieldsForSticky = {
+                creditCardType: getCardType(rawCardNumber), // Determine card type from number (Uppercase)
+                creditCardNumber: rawCardNumber,
+                expirationDate: rawExpiryMMYY, // Use formatted MMYY
+                CVV: rawCvv, // Uppercase CVV matches type
+            };
+            console.log(`[CheckoutHandler] Raw card details extracted for ${internal_txn_id}`);
+            // DEBUG: Log the constructed payment fields object for Sticky
+            console.log(`[CheckoutHandler] paymentFieldsForSticky object:`, JSON.stringify(paymentFieldsForSticky));
+            // --- End RAW card details ---
+        } else if (determinedPaymentMethod === 'paypal') {
+            // If PayPal, we might just need to indicate the type, or Sticky might handle it differently
+            // Based on the example, PayPal details aren't sent in the same way.
+            // Let's assume for now we don't add specific fields for PayPal in this step.
+            // paymentFieldsForSticky = { paymentType: 'paypal' }; // Example if needed
+            console.log(`[CheckoutHandler] PayPal payment method selected, no card fields added.`);
         }
 
+
         // 4. Construct Sticky.io Payload
-        const stickyPayload: StickyPayload = {
+        // Use Record<string, any> for flexibility, especially with spread syntax later
+        const stickyPayload: Record<string, any> = {
+            // Customer Details (Required)
             firstName: checkoutPayload.customer?.firstName,
             lastName: checkoutPayload.customer?.lastName,
-            billingFirstName: checkoutPayload.billing?.firstName || checkoutPayload.customer?.firstName,
-            billingLastName: checkoutPayload.billing?.lastName || checkoutPayload.customer?.lastName,
-            billingAddress1: checkoutPayload.billing?.address1,
-            billingAddress2: checkoutPayload.billing?.address2,
-            billingCity: checkoutPayload.billing?.city,
-            billingState: checkoutPayload.billing?.state,
-            billingZip: checkoutPayload.billing?.zip,
-            billingCountry: checkoutPayload.billing?.country,
-            phone: checkoutPayload.customer?.phone,
-            email: checkoutPayload.customer?.email,
-            shippingId: checkoutPayload.shipping?.shippingId,
-            shippingAddress1: checkoutPayload.shipping?.address1,
-            shippingAddress2: checkoutPayload.shipping?.address2,
-            shippingCity: checkoutPayload.shipping?.city,
-            shippingState: checkoutPayload.shipping?.state,
-            shippingZip: checkoutPayload.shipping?.zip,
-            shippingCountry: checkoutPayload.shipping?.country,
+
+            // Billing Details (Required, use customer/shipping if sameAsShipping or billing not provided)
+            // Assuming checkoutPayload.customer.shippingAddress exists from frontend structure
+            billingFirstName: checkoutPayload.billingSameAsShipping ? checkoutPayload.customer?.firstName : checkoutPayload.billing?.firstName || checkoutPayload.customer?.firstName,
+            billingLastName: checkoutPayload.billingSameAsShipping ? checkoutPayload.customer?.lastName : checkoutPayload.billing?.lastName || checkoutPayload.customer?.lastName,
+            billingAddress1: checkoutPayload.billingSameAsShipping ? checkoutPayload.customer?.shippingAddress?.address1 : checkoutPayload.billing?.address1 || checkoutPayload.customer?.shippingAddress?.address1,
+            billingAddress2: checkoutPayload.billingSameAsShipping ? checkoutPayload.customer?.shippingAddress?.address2 : checkoutPayload.billing?.address2 || checkoutPayload.customer?.shippingAddress?.address2,
+            billingCity: checkoutPayload.billingSameAsShipping ? checkoutPayload.customer?.shippingAddress?.city : checkoutPayload.billing?.city || checkoutPayload.customer?.shippingAddress?.city,
+            billingState: checkoutPayload.billingSameAsShipping ? checkoutPayload.customer?.shippingAddress?.state : checkoutPayload.billing?.state || checkoutPayload.customer?.shippingAddress?.state,
+            billingZip: checkoutPayload.billingSameAsShipping ? checkoutPayload.customer?.shippingAddress?.zip : checkoutPayload.billing?.zip || checkoutPayload.customer?.shippingAddress?.zip,
+            billingCountry: checkoutPayload.billingSameAsShipping ? checkoutPayload.customer?.shippingAddress?.country : checkoutPayload.billing?.country || checkoutPayload.customer?.shippingAddress?.country,
+            phone: checkoutPayload.customer?.phone, // Required
+            email: checkoutPayload.customer?.email, // Required
+
+            // Shipping Details (Required) - Assuming structure from CheckoutForm.tsx
+            // Note: shippingId might come from product data, not address data. Using default '2' based on example.
+            shippingId: checkoutPayload.products?.[0]?.ship_id ?? checkoutPayload.shipping?.shippingId ?? '2', // REQUIRED - Defaulting to '2'
+            shippingAddress1: checkoutPayload.customer?.shippingAddress?.address1,
+            shippingAddress2: checkoutPayload.customer?.shippingAddress?.address2,
+            shippingCity: checkoutPayload.customer?.shippingAddress?.city,
+            shippingState: checkoutPayload.customer?.shippingAddress?.state,
+            shippingZip: checkoutPayload.customer?.shippingAddress?.zip,
+            shippingCountry: checkoutPayload.customer?.shippingAddress?.country,
             billingSameAsShipping: checkoutPayload.billingSameAsShipping ? 'YES' : 'NO',
+
+            // Transaction Details (Required)
             tranType: 'Sale',
-            payment: determinedPaymentMethod === 'card' ? paymentDataForSticky : { paymentType: 'paypal' },
-            campaignId: targetCampaignId,
-            offers: checkoutPayload.offers,
-            ipAddress: ipAddress,
+            campaignId: targetCampaignId, // Required
+            // Map products from checkoutPayload to Sticky.io offers structure (REQUIRED)
+            // IMPORTANT: offer_id and billing_model_id MUST be passed from frontend in checkoutPayload.products
+            // Ensure we are accessing the correct fields from the 'p' object which represents an item from checkoutPayload.products
+            offers: checkoutPayload.products?.map((p: any) => {
+                console.log('[CheckoutHandler] Mapping product item from frontend:', JSON.stringify(p)); // DEBUG: Log the item received from frontend
+                return {
+                    product_id: p.product_id, // CORRECTED: Access product_id sent by frontend
+                    offer_id: p.offer_id, // Access offer_id sent by frontend
+                    billing_model_id: p.billing_model_id, // Access billing_model_id sent by frontend
+                    quantity: p.quantity ?? 1,
+                    // price: p.price // Optional? Check Sticky docs
+                };
+            }) || [], // Ensure it's an array
+            ipAddress: ipAddress, // Required
+
+            // Payment Details (Added via spread below)
+
+            // Tracking Parameters (Optional)
             AFID: state.trackingParams?.affId,
             SID: state.trackingParams?.sub1,
             AFFID: state.trackingParams?.c1,
@@ -129,15 +180,31 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             utm_campaign: state.trackingParams?.utm_campaign,
             utm_content: state.trackingParams?.utm_content,
             utm_term: state.trackingParams?.utm_term,
+
+            // Add payment fields directly to the payload if it's a card payment
+            ...(determinedPaymentMethod === 'card' ? paymentFieldsForSticky : {}),
         };
 
-        // Remove undefined fields
-        const payloadToSend = stickyPayload as Record<string, any>;
-        Object.keys(payloadToSend).forEach(key => payloadToSend[key] === undefined && delete payloadToSend[key]);
-        if (payloadToSend.payment && typeof payloadToSend.payment === 'object') {
-            const paymentPayload = payloadToSend.payment as Record<string, any>;
-            Object.keys(paymentPayload).forEach(key => paymentPayload[key] === undefined && delete paymentPayload[key]);
-        }
+
+        // Remove undefined and null fields before sending
+        const payloadToSend: Record<string, any> = stickyPayload; // Keep as Record for cleanup
+        Object.keys(payloadToSend).forEach((key: string) => {
+            // Remove undefined and null values, as Sticky might not like them
+            if (payloadToSend[key] === undefined || payloadToSend[key] === null) {
+                delete payloadToSend[key];
+            }
+            // Special check for offers array - ensure it's not empty if present
+            if (key === 'offers' && Array.isArray(payloadToSend[key]) && payloadToSend[key].length === 0) {
+                 console.warn(`[CheckoutHandler] Removing empty 'offers' array from payload for ${internal_txn_id}`);
+                 delete payloadToSend[key]; // Remove empty offers array if Sticky requires it to be non-empty when present
+            }
+        });
+
+        // Log the campaign ID being sent (check if exists before logging)
+        console.log(`[CheckoutHandler] Sending campaignId to Sticky.io: ${payloadToSend.campaignId ?? 'N/A'}`);
+
+        // DEBUG: Log the entire payload being sent to Sticky.io
+        console.log('[CheckoutHandler] Final payloadToSend to Sticky:', JSON.stringify(payloadToSend, null, 2)); // Pretty print
 
         // 5. Call Sticky.io NewOrder API
         const stickyResponse = await callStickyNewOrder(payloadToSend, env);

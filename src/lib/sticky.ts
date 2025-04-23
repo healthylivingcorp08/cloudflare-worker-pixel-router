@@ -17,8 +17,9 @@ async function callStickyApi(endpoint: string, payload: any, env: Env, method: s
     // Ensure the base URL doesn't end with a slash and the endpoint doesn't start with one
     const cleanBaseUrl = stickyBaseUrl.endsWith('/') ? stickyBaseUrl.slice(0, -1) : stickyBaseUrl;
     const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
-    const stickyUrl = `${cleanBaseUrl}/api/v1/${cleanEndpoint}`; // Construct full URL
-
+    // Construct full URL by joining base and specific endpoint
+    const stickyUrl = `${cleanBaseUrl}/${cleanEndpoint}`;
+   
     console.log(`[StickyLib] Calling Sticky.io ${method}: ${stickyUrl}`);
     // Avoid logging sensitive payload details in production environments
     // console.log(`[StickyLib] Payload: ${JSON.stringify(payload)}`);

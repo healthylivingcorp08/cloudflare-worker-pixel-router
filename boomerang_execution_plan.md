@@ -109,12 +109,12 @@ Based on `kv_pixel_fires_checkout_plan.md`.
 
 ## Phase 4: Frontend Integration
 
--   [ ] **Update Frontend:**
-    -   [ ] Implement call to `/api/decide-campaign` *before* payment initiation.
-    -   [ ] Pass `internal_txn_id` consistently through checkout and upsell flows.
-    -   [ ] Use `targetCampaignId` from `/api/decide-campaign` response for initial Sticky.io call.
-    -   [ ] Handle client-side actions returned by worker endpoints (`/`, `/api/upsell`, `/checkout/paypal-return`).
-    -   [ ] Update PayPal return URL to point to the worker's `/checkout/paypal-return` endpoint, including the `internal_txn_id`.
+-   [X] **Update Frontend:**
+    -   [X] Implement call to `/api/decide-campaign` *before* payment initiation.
+    -   [X] Pass `internal_txn_id` consistently through checkout and upsell flows.
+    -   [X] Use `targetCampaignId` from `/api/decide-campaign` response for initial Sticky.io call.
+    -   [X] Handle client-side actions returned by worker endpoints (`/`, `/api/upsell`, `/checkout/paypal-return`).
+    -   [X] Update PayPal return URL to point to the worker's `/checkout/paypal-return` endpoint, including the `internal_txn_id`.
 ---
 ## Action Log
 
