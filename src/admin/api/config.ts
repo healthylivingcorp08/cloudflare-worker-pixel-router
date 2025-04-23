@@ -18,18 +18,21 @@ export async function handleListSites(request: AuthenticatedRequest, env: Env): 
 
   try {
     console.log('[Config] Entering handleListSites (Simplified Logic)'); // <-- Log entry
-    // List keys with the site config prefix
-    const listResult = await env.PIXEL_CONFIG.list({ prefix: 'site_config_' });
-    // Log list result - cursor only exists if list_complete is false
-    console.log(`[Config] PIXEL_CONFIG.list({ prefix: 'site_config_' }) result: ${listResult.keys.length} keys, list_complete=${listResult.list_complete}${listResult.list_complete ? '' : `, cursor=${listResult.cursor}`}`); // <-- Log list result
+    // List all keys to find site status markers
+    // WARNING: This can be inefficient with a very large number of keys.
+    // Consider adding a dedicated site index key later if performance becomes an issue.
+    const listResult = await env.PIXEL_CONFIG.list();
+    // Log list result
+    console.log(`[Config] PIXEL_CONFIG.list() result: ${listResult.keys.length} total keys found, list_complete=${listResult.list_complete}${listResult.list_complete ? '' : `, cursor=${listResult.cursor}`}`);
 
-    // Extract site IDs directly from the keys found
+    // Extract site IDs by finding keys ending with '_website_status'
     const siteIds = listResult.keys
-      .map(key => key.name.substring('site_config_'.length)) // Extract site ID after prefix
-      .filter(id => id); // Filter out any potential empty strings (shouldn't happen with prefix)
+      .filter(key => key.name.includes('_') && key.name.endsWith('_website_status')) // Ensure it has an underscore and ends correctly
+      .map(key => key.name.split('_')[0]) // Extract site ID before the first underscore
+      .filter(id => id); // Filter out any potential empty strings
 
-    const uniqueSiteIds = [...new Set(siteIds)]; // Ensure uniqueness (though prefix should guarantee it)
-    console.log(`[Config] Found site IDs directly from 'site_config_' keys: ${uniqueSiteIds.join(', ')}`);
+    const uniqueSiteIds = [...new Set(siteIds)]; // Ensure uniqueness
+    console.log(`[Config] Found site IDs by looking for '_website_status' keys: ${uniqueSiteIds.join(', ')}`);
 
     // No verification needed as the key's existence is the criterion
 

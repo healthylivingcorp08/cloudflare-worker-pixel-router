@@ -39,9 +39,40 @@ export async function routeRequest(request: Request, env: Env, ctx: ExecutionCon
         }
 
         // --- Handle Admin Routes ---
-        if (pathname.startsWith('/admin')) {
-            console.log(`[Router] Delegating to Admin Router for ${pathname}`);
-            return await handleAdminRequest(request, env);
+        // Delegate /, /admin, and /login paths to the admin router/proxy
+        if (pathname === '/' || pathname.startsWith('/admin') || pathname.startsWith('/login')) {
+             // Only delegate GET for the root path, POST / is the checkout endpoint
+            if (pathname === '/' && method !== 'GET') {
+                 // Let it fall through to API routes if it's not GET /
+            } else {
+                console.log(`[Router] Delegating to Admin Router for ${pathname}`);
+                return await handleAdminRequest(request, env);
+            }
+        }
+
+        // --- Proxy Next.js Dev Server Assets ---
+        // In local dev (wrangler dev), proxy requests for /_next/ to the Next.js dev server
+        // TODO: Determine if NEXT_PUBLIC_APP_URL is reliable or if we should hardcode localhost:3000 for dev proxy
+        const nextDevServerUrl = 'http://localhost:3000'; // Assuming Next.js runs on 3000 locally
+        if (pathname.startsWith('/_next/')) {
+            const proxyUrl = `${nextDevServerUrl}${pathname}${url.search}`;
+            console.log(`[Router] DEV PROXY: Proxying Next.js asset request for ${pathname} to ${proxyUrl}`);
+            try {
+                // Re-create the request to the target server
+                const proxyRequest = new Request(proxyUrl, {
+                    method: request.method,
+                    headers: request.headers,
+                    body: request.body,
+                    redirect: 'manual', // Important to handle redirects manually if needed
+                });
+                const proxyResponse = await fetch(proxyRequest);
+                console.log(`[Router] DEV PROXY: Received response from Next.js for ${proxyUrl}: Status ${proxyResponse.status}`);
+                // Return the response directly
+                return proxyResponse;
+            } catch (error: any) {
+                 console.error(`[Router] DEV PROXY: Error proxying request to ${proxyUrl}:`, error);
+                 return new Response(`Error proxying request to Next.js dev server: ${error.message}`, { status: 502 }); // Bad Gateway
+            }
         }
 
         // --- Handle API Routes ---

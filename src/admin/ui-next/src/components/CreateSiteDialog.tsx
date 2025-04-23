@@ -38,18 +38,13 @@ export function CreateSiteDialog({ open, onOpenChange, onSuccess }: CreateSiteDi
       // The API endpoint is /admin/api/config/:siteId and uses PUT for creation
       // It expects the full SiteConfig object in the body
       const siteId = newSiteId.trim();
-      const newConfig = {
-        siteId: siteId,
-        scrubPercent: 0, // Default scrub percent
-        pages: {},       // Start with empty pages
-        // Metadata will be added by the backend
-      };
+      // No longer need to construct newConfig object here
 
-      // authFetch will return parsed data on success or throw an error
-      const result = await authFetch(`/admin/api/config/${siteId}`, { // Use siteId in URL
+      // Call the endpoint that handles template creation
+      const result = await authFetch(`/admin/api/kv/create-template`, { // Correct endpoint
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newConfig), // Send the full config object
+        body: JSON.stringify({ siteId: siteId }), // Send only the siteId in the body
       });
 
       // If authFetch didn't throw, it was successful. 'result' contains the response data.

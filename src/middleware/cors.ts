@@ -2,7 +2,8 @@
 const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
-  'https://space-7z6.pages.dev' // Example production frontend origin
+  'https://space-7z6.pages.dev', // Example production frontend origin
+  'http://127.0.0.1:8787' // Wrangler dev server origin
   // Add other allowed origins here
 ];
 
@@ -17,9 +18,10 @@ export function handleOptions(request: Request): Response {
     return new Response(null, {
       headers: {
         'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE', // Allow common methods
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization', // Allow common headers
-        'Access-Control-Max-Age': '86400', // Cache preflight response for 1 day
+        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
+        // Allow standard headers plus custom ones used by the client
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Internal-Transaction-Id, X-Target-Campaign-Id',
+        'Access-Control-Max-Age': '86400',
       },
     });
   } else {

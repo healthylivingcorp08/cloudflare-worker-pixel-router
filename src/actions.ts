@@ -75,6 +75,53 @@ async function executeServerSideAction(
   }
 }
 
+// --- Helper to get Action Keys based ONLY on affid and scrub status ---
+// If affid is missing or the specific key isn't found, NO actions are returned.
+
+async function getActionKeys(
+  siteId: string,
+  event: string, // e.g., 'checkout', 'upsell1', 'landing_page'
+  isScrub: boolean,
+  request: CfRequest,
+  env: Env
+): Promise<string[]> {
+  const url = new URL(request.url);
+  const affid = url.searchParams.get('affid'); // Case-sensitive 'affid'
+
+  if (!affid || affid.trim() === '') {
+    console.log(`getActionKeys: Required 'affid' parameter missing or empty in URL. No actions will be fired for site ${siteId}, event ${event}.`);
+    return []; // Return empty list if affid is missing or empty
+  }
+
+  // Ensure affid is treated as uppercase for key construction, as requested
+  const affidUpper = affid.trim().toUpperCase();
+
+  const scrubStatusString = isScrub ? 'Scrub' : 'Normal';
+  // Construct the specific key name, e.g., esther_checkout_affid_MYAFF_NormalActions
+  const actionListKey = `${siteId}_${event}_affid_${affidUpper}_${scrubStatusString}Actions`;
+
+  console.log(`getActionKeys: Attempting to fetch affiliate-specific action list key: ${actionListKey}`);
+
+  const actionKeysStr = await env.PIXEL_CONFIG.get(actionListKey);
+
+  if (!actionKeysStr) {
+    console.log(`getActionKeys: Affiliate-specific action list key '${actionListKey}' not found in KV. No actions will be fired.`);
+    return []; // Return empty list if specific key not found
+  }
+
+  try {
+    const actionKeys: string[] = JSON.parse(actionKeysStr);
+    if (!Array.isArray(actionKeys)) {
+       throw new Error('Parsed value is not an array');
+    }
+    console.log(`getActionKeys: Found ${actionKeys.length} actions for key '${actionListKey}'.`);
+    return actionKeys;
+  } catch (e: any) {
+    console.error(`getActionKeys: Failed to parse action list JSON for key '${actionListKey}'. Value: ${actionKeysStr}. Error: ${e.message}`);
+    return []; // Return empty list on parse error
+  }
+}
+
 // --- Main Trigger Functions ---
 
 /**
@@ -100,6 +147,13 @@ export async function triggerInitialActions(
     }
     const state: PixelState = JSON.parse(stateString);
 
+    // Extract siteId early for use in getActionKeys
+    const siteId = state.siteId;
+    if (!siteId) {
+      console.error('triggerInitialActions: siteId missing from state', { internal_txn_id });
+      return { clientSideActions: [] };
+    }
+
     // 1. Idempotency Check
     if (state.processed_Initial === true) {
       console.log(`triggerInitialActions: Already processed for ${internal_txn_id}`);
@@ -108,9 +162,9 @@ export async function triggerInitialActions(
 
     // 2. Update KV State (Mark as processed) - Do this early
     const updatedState: Partial<PixelState> = {
-      processed_Initial: true,
-      status: 'success', // Mark overall status as success on initial processing
-      timestamp_processed_Initial: new Date().toISOString(),
+    	processed_Initial: true,
+    	status: 'processed', // Mark overall status as processed on initial processing
+    	timestamp_processed_Initial: new Date().toISOString(),
     };
     // Use waitUntil to ensure KV write happens even if function returns early
     context.waitUntil(
@@ -128,22 +182,25 @@ export async function triggerInitialActions(
       return { clientSideActions: [] };
     }
 
-    // 5. Fetch Action Keys & Definitions
-    const actionKeysStr = await env.PIXEL_CONFIG.get('checkoutNormalActions'); // Assuming normal actions for now
-    if (!actionKeysStr) {
-      console.log(`triggerInitialActions: No checkoutNormalActions configured for ${internal_txn_id}`);
+    // 5. Get Action Keys using the helper function (which now requires affid)
+    const isScrub = state.scrubDecision?.isScrub ?? false; // Default to false if scrubDecision is missing
+    const actionKeys = await getActionKeys(siteId, 'checkout', isScrub, request, env);
+
+    if (actionKeys.length === 0) {
+      console.log(`triggerInitialActions: No actions to perform for ${internal_txn_id} based on getActionKeys result.`);
       return { clientSideActions: [] };
     }
 
-    const actionKeys: string[] = JSON.parse(actionKeysStr);
+    // 6. Fetch Action Definitions (using siteId prefix)
     const actionDefinitions: { key: string; definition: ActionDefinition | null }[] = await Promise.all(
       actionKeys.map(async (key) => {
-        const definitionStr = await env.PIXEL_CONFIG.get(`action:${key}`);
+        const definitionKey = `${siteId}_${key}`; // e.g., esther_action_FacebookPurchase
+        const definitionStr = await env.PIXEL_CONFIG.get(definitionKey);
         return { key, definition: definitionStr ? JSON.parse(definitionStr) : null };
       })
     );
 
-    // 6. Parameterize & Execute/Collect Actions
+    // 7. Parameterize & Execute/Collect Actions
     // Construct dataSources and cast to the type expected by populateParameters
     const dataSources: ParameterDataSources = { state, confirmationData, request, env };
     // const isScrub = state.scrubDecision.isScrub; // isScrub is now handled within populateParameters/resolveParameterValue
@@ -203,7 +260,7 @@ export async function triggerInitialActions(
       }
     }
 
-    // 7. Execute Server-Side Actions Asynchronously
+    // 8. Execute Server-Side Actions Asynchronously
     if (serverSidePromises.length > 0) {
       context.waitUntil(Promise.allSettled(serverSidePromises));
     }
@@ -248,6 +305,13 @@ export async function triggerUpsellActions(
     }
     const state: PixelState = JSON.parse(stateString);
 
+    // Extract siteId early for use in getActionKeys
+    const siteId = state.siteId;
+    if (!siteId) {
+      console.error('triggerUpsellActions: siteId missing from state', { internal_txn_id, upsellStepNum });
+      return { clientSideActions: [] };
+    }
+
     // 1. Idempotency Check
     if (state[processedFlagKey] === true) {
       console.log(`triggerUpsellActions: Step ${upsellStepNum} already processed for ${internal_txn_id}`);
@@ -265,22 +329,26 @@ export async function triggerUpsellActions(
         .catch(err => console.error('triggerUpsellActions: Failed to update KV state', { internal_txn_id, upsellStepNum, error: err.message })) // Replaced logError
     );
 
-    // 3. Fetch Action Keys & Definitions
-    const actionKeysStr = await env.PIXEL_CONFIG.get(actionListKey); // Assuming normal actions for now
-    if (!actionKeysStr) {
-      console.log(`triggerUpsellActions: No ${actionListKey} configured for ${internal_txn_id}`);
+    // 3. Get Action Keys using the helper function (which now requires affid)
+    const isScrub = state.scrubDecision?.isScrub ?? false; // Default to false if scrubDecision is missing
+    const eventName = `upsell${upsellStepNum}`;
+    const actionKeys = await getActionKeys(siteId, eventName, isScrub, request, env);
+
+    if (actionKeys.length === 0) {
+      console.log(`triggerUpsellActions: No actions to perform for step ${upsellStepNum} on ${internal_txn_id} based on getActionKeys result.`);
       return { clientSideActions: [] };
     }
 
-    const actionKeys: string[] = JSON.parse(actionKeysStr);
+    // 4. Fetch Action Definitions (using siteId prefix)
     const actionDefinitions: { key: string; definition: ActionDefinition | null }[] = await Promise.all(
       actionKeys.map(async (key) => {
-        const definitionStr = await env.PIXEL_CONFIG.get(`action:${key}`);
+        const definitionKey = `${siteId}_${key}`; // e.g., esther_action_FacebookUpsell
+        const definitionStr = await env.PIXEL_CONFIG.get(definitionKey);
         return { key, definition: definitionStr ? JSON.parse(definitionStr) : null };
       })
     );
 
-    // 4. Parameterize & Execute/Collect Actions
+    // 5. Parameterize & Execute/Collect Actions
     // Construct dataSources and cast to the type expected by populateParameters
     const dataSources: ParameterDataSources = { state, confirmationData, request, env };
     // const isScrub = state.scrubDecision.isScrub; // isScrub is now handled within populateParameters/resolveParameterValue
@@ -341,7 +409,7 @@ export async function triggerUpsellActions(
        }
     }
 
-    // 5. Execute Server-Side Actions Asynchronously
+    // 6. Execute Server-Side Actions Asynchronously
     if (serverSidePromises.length > 0) {
       context.waitUntil(Promise.allSettled(serverSidePromises));
     }

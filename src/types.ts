@@ -1,259 +1,146 @@
 import type { KVNamespace } from '@cloudflare/workers-types';
 
-// Pixel Types
-export type PixelType = 'everflow_click' | 'everflow_conversion' | 'normal' | 'scrub';
-
-// Parameter Mapping Types
-export interface ParameterMapping {
-  [pixelParam: string]: string; // Maps pixel parameter names to URL parameter names
-}
-
-// Pixel Configuration
-export interface PixelConfig {
-  type: PixelType;
-  config: {
-    offer_id?: string;
-    affiliate_id?: string;
-    parameterMapping?: ParameterMapping;
-    [key: string]: any; // Other configuration options
-  };
-}
-
-// API Endpoint Configuration
-export interface ApiEndpointConfig {
-  type: string;
-  endpoint: string;
-  method: string;
-  config: {
-    campaign_id?: string;
-    product_id?: string;
-    api_key?: string;
-    [key: string]: any; // Other API-specific configuration
-  };
-}
-
-// Page Configuration
-export interface PageConfig {
-  pixels: PixelConfig[];
-  apiEndpoints: ApiEndpointConfig[];
-}
-
-// Site Configuration
-export interface SiteConfig {
-  scrubPercent: number;
-  siteId: string;
-  normal_campaign_id: string; // Added: Default campaign ID for the site
-  scrub_campaign_id: string;  // Added: Campaign ID to use when scrubbing
-  payout_step?: number; // 1: Single Payout (default), 2: Multiple Payouts (incl. upsells)
-  pages: {
-    [pageName: string]: PageConfig;
-  };
-}
-
-// Sites Configuration
-export interface SitesConfig {
-  [site: string]: SiteConfig;
-}
-
-// Conversion Data
-export interface ConversionData {
-  site: string;
-  page: string;
-  pixelType: PixelType;
-  [key: string]: any; // Other order/conversion fields
-}
-
-// Pixel Route Result
-export interface PixelRouteResult {
-  pixels: PixelConfig[];
-  apiEndpoints: ApiEndpointConfig[];
-  shouldScrub: boolean;
-}
-
-// URL Context (for parameter resolution)
-export interface UrlContext {
-  params: { [key: string]: string };
-  path: string;
-  hostname: string;
-}
-
-// Value Resolution Context
-export interface ResolutionContext {
-  url: UrlContext;
-  kv: KVNamespace;
-  secrets: { [key: string]: string };
-}
-
-// Cloudflare Worker environment type for KV and Secret bindings
+// Environment variables expected by the Worker
 export interface Env {
-  PIXEL_CONFIG: KVNamespace; // KV Binding for rules/actions
-  PIXEL_STATE: KVNamespace;  // KV Binding for transaction state
+	// KV Namespaces
+	PIXEL_STATE: KVNamespace; // Stores state for individual pixel fires (e.g., transaction details)
+	PIXEL_CONFIG: KVNamespace; // Stores site configuration, action definitions, etc.
+	ADMIN_UI_ASSETS: KVNamespace; // For serving the admin UI static files
 
-  // Secrets for Sticky.io API
-  STICKY_API_URL: string;      // Worker Secret binding
-  STICKY_USERNAME: string;     // Worker Secret binding (production name)
-  STICKY_PASSWORD: string;     // Worker Secret binding (production name)
+	// Secrets / API Keys
+	ADMIN_USERNAME?: string; // Basic Auth username for admin UI
+	ADMIN_PASSWORD?: string; // Basic Auth password hash for admin UI
+	JWT_SECRET: string; // Secret for signing JWTs for admin sessions
 
-  // Secrets for Admin Auth (Example)
-  ADMIN_USERNAME?: string; // Optional secret
-  ADMIN_PASSWORD?: string; // Optional secret
+	FB_PIXEL_ID?: string; // Default Facebook Pixel ID
+	FB_ACCESS_TOKEN?: string; // Facebook Conversions API Access Token
+	FB_TEST_CODE?: string; // Optional Facebook Test Event Code
 
-  JWT_SECRET: string;       // Secret for signing/verifying admin JWTs
+	GA_MEASUREMENT_ID?: string; // Optional Google Analytics Measurement ID (e.g., G-XXXX)
+	GA_API_SECRET?: string; // Optional Google Analytics Measurement Protocol API Secret
 
-  // Secret for Encryption
-  ENCRYPTION_SECRET?: string; // Added for encryption/decryption
+	EF_COMPANY_ID?: string; // Optional Everflow Company ID
+	EF_API_KEY?: string; // Optional Everflow API Key
 
-  // KV Namespace for Admin UI Assets (JS, CSS)
-  ADMIN_UI_ASSETS: KVNamespace;
+	STICKY_API_URL?: string; // Sticky.io API endpoint URL
+	STICKY_USERNAME?: string; // Sticky.io API username
+	STICKY_PASSWORD?: string; // Sticky.io API password
 
-  // Flag for enabling Next.js dev server proxy
-  ADMIN_DEV_PROXY?: string; // Should be 'true' or 'false'/'undefined'
-
-  // Secrets for Facebook CAPI (Optional)
-  FB_PIXEL_ID?: string;
-  FB_ACCESS_TOKEN?: string;
-  FB_TEST_CODE?: string; // Optional test event code
-
-  // Other secrets can be added here
-}
-// Simple Key-Value Pair type for Admin UI
-export interface KVPair {
-  key: string;
-  value: string;
+	// Add other environment variables as needed
+	// MY_OTHER_VARIABLE: string;
 }
 
-// KV State for Pixel Transactions (Based on kv_pixel_fires_checkout_plan.md Section 3)
+// Structure for storing the state of a pixel transaction in KV
 export interface PixelState {
-  internal_txn_id: string;
-  timestamp_created: string; // ISO 8601 format
-  status: 'pending' | 'paypal_redirect' | 'success' | 'failed';
-  trackingParams: {
-    affId?: string;
-    c1?: string;
-    c2?: string;
-    sub1?: string;
-    sub2?: string;
-    sub3?: string;
-    sub4?: string;
-    sub5?: string;
-    uid?: string;
-    source_id?: string;
-    click_id?: string; // Everflow transaction_id
-    campaignId?: string; // Original campaignId before scrub/remap
-    fbc?: string;
-    fbp?: string;
-    [key: string]: any; // Allow other tracking params
-  };
-  scrubDecision: {
-    isScrub: boolean;
-    targetCampaignId: string;
-  };
-  stickyOrderId_Initial?: string | null;
-  stickyOrderId_Upsell1?: string | null;
-  stickyOrderId_Upsell2?: string | null;
-  // Add more upsell order IDs if needed
-  paymentMethod_Initial?: 'card' | 'paypal' | null;
-  processed_Initial: boolean;
-  processed_Upsell_1?: boolean;
-  processed_Upsell_2?: boolean;
-  // Add more upsell processed flags if needed
-  timestamp_processed_Initial?: string | null; // ISO 8601 format
-  timestamp_processed_Upsell_1?: string | null; // ISO 8601 format
-  // Add more timestamps if needed
-}
-// --- Data Structures from Original index.ts ---
-
-// Structure for encrypted data (used in encryption utils and payment data)
-export interface EncryptedData {
-  iv: string;
-  ciphertext: string;
+	internal_txn_id: string; // Unique ID generated by the worker
+	siteId: string; // The site ID this transaction belongs to
+	timestamp_created: string; // ISO 8601 timestamp when the state was first created
+	status?: 'pending' | 'processed' | 'error'; // Status of the pixel processing (optional initially)
+	trackingParams: { // Parameters captured from the initial request
+		[key: string]: string | undefined; // Allow flexible tracking params like click_id, affId, c1, c2, c3 etc.
+	};
+	scrubDecision?: { // Decision from the scrubbing process (optional)
+		isScrub: boolean;
+		reason?: string;
+		targetCampaignId?: string; // e.g., the campaign ID to route to after scrubbing
+	};
+		 stickyOrderId_Initial?: string | null; // Sticky.io Order ID from the initial purchase
+		 targetCampaignId?: string | null; // Campaign ID determined during checkout/scrubbing, used for upsells
+	// Flags to track processing stages (can add more for different event types)
+	processed_Initial: boolean;
+	processed_Upsell_1: boolean;
+	processed_Upsell_2: boolean; // Example for a second upsell step
+	// Timestamps for processing stages
+	timestamp_processed_Initial: string | null;
+	timestamp_processed_Upsell_1: string | null;
+	// Add more fields as needed, e.g., specific data points required for later actions
+	// customer_email?: string; // Example: Store email if needed for delayed actions
 }
 
-// Structure for payment details, including potential encrypted fields
-export interface PaymentData {
-  cardType?: string;
-  // Encrypted fields (optional, will be deleted after decryption)
-  encryptedCard?: string | EncryptedData; // Allow both string (old format?) and object
-  encryptedExpiry?: string | EncryptedData;
-  encryptedCvv?: string | EncryptedData;
-  // Decrypted fields (optional, added after decryption)
-  creditCardNumber?: string;
-  expirationDate?: string; // Should be MMYY format for Sticky
-  CVV?: string;
-  // PayPal specific
-  paymentType?: 'paypal';
+// --- Configuration Types (Stored in PIXEL_CONFIG KV) ---
+
+// Defines configuration specific to a site/domain
+export interface SiteConfig {
+	siteId: string; // e.g., 'drivebright'
+	domain: string; // e.g., 'www.drivebright.com'
+	pages: Record<string, PageConfig>; // Map page identifiers (e.g., 'checkout', 'upsell1') to their configs
+	payoutConfig?: PayoutConfig; // Optional payout configuration
+	// Add other site-level settings like default pixel IDs if needed
 }
 
-// Structure for the payload sent to Sticky.io API
-export interface StickyPayload {
-  firstName?: string;
-  lastName?: string;
-  billingFirstName?: string;
-  billingLastName?: string;
-  billingAddress1?: string;
-  billingAddress2?: string;
-  billingCity?: string;
-  billingState?: string;
-  billingZip?: string;
-  billingCountry?: string;
-  phone?: string;
-  email?: string;
-  payment?: PaymentData;
-  shippingId?: string;
-  shippingAddress1?: string;
-  shippingAddress2?: string;
-  shippingCity?: string;
-  shippingState?: string;
-  shippingZip?: string;
-  shippingCountry?: string;
-  billingSameAsShipping?: string; // 'YES' or 'NO'
-  tranType?: string; // e.g., 'Sale'
-  ipAddress?: string;
-  campaignId?: string;
-  offers?: any[]; // Define more specific type if possible
-  AFID?: string;
-  SID?: string;
-  AFFID?: string;
-  C1?: string;
-  C2?: string;
-  C3?: string;
-  AID?: string;
-  OPT?: string;
-  click_id?: string;
-  utm_source?: string;
-  utm_medium?: string;
-  utm_campaign?: string;
-  utm_content?: string;
-  utm_term?: string;
-  previousOrderId?: string; // For upsells
+// Defines configuration for a specific page within a site
+export interface PageConfig {
+	pageId: string; // Matches the key in SiteConfig.pages (e.g., 'checkout')
+	pathPattern: string; // Regex pattern to match the page URL path (e.g., '/checkout.*')
+	event: 'Initial' | 'Upsell_1' | 'Upsell_2'; // Type of event this page corresponds to
+	actions: {
+		normal: string[]; // List of action keys (e.g., ['fb_purchase', 'ga_purchase', 'ef_postback']) for normal processing
+		scrub?: string[]; // Optional list of action keys for scrubbed transactions
+	};
 }
 
-// Structure for address details
-export interface Address {
-    address1: string;
-    address2?: string;
-    city: string;
-    state: string;
-    country: string;
-    zip: string;
+// Defines payout settings, potentially per affiliate
+export interface PayoutConfig {
+	defaultPayoutSteps: number; // Default number of steps required for payout (e.g., 1 for initial, 2 for initial+upsell1)
+	affiliatePayoutSteps?: Record<string, number>; // Override payout steps per affiliate ID (e.g., { 'aff123': 2 })
 }
 
-// Structure for product details in an order
-export interface Product {
-    product_name: string;
-    quantity: number;
-    unitPrice: number;
-    regPrice?: number;
-    imageUrl?: string;
+// Defines a single action (pixel fire, server postback, etc.)
+// Using discriminated union for type safety based on 'type'
+export type ActionDefinition = ServerSideActionDefinition | ClientSideActionDefinition;
+
+interface ActionDefinitionBase {
+	actionKey: string; // Unique key for this action (e.g., 'fb_purchase_capi')
+	provider: string; // e.g., 'facebook', 'google', 'everflow', 'custom'
+	type: 'server-side' | 'client-side';
 }
 
-// Structure for order confirmation data (potentially returned from Sticky or constructed)
-export interface OrderConfirmation {
-    orderNumbers: string; // Or string[] if multiple orders possible
-    firstName: string;
-    lastName: string;
-    shippingAddress: Address;
-    products: Product[];
-    shippingFee: number;
-    creditCardType?: string;
+export interface ServerSideActionDefinition extends ActionDefinitionBase {
+	type: 'server-side';
+	config: ApiEndpointConfig; // Configuration for the API call
+}
+
+export interface ClientSideActionDefinition extends ActionDefinitionBase {
+	type: 'client-side';
+	config: PixelConfig; // Configuration for the client-side script/pixel
+}
+
+
+// Configuration for a server-side API endpoint action
+export interface ApiEndpointConfig {
+	url: string; // URL template for the API endpoint (can include PARAM:* placeholders)
+	method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+	headers?: Record<string, string>; // Header templates (can include PARAM:* placeholders)
+	body_template?: Record<string, any> | string; // JSON object or string template for the request body (can include PARAM:*)
+	// Add authentication details if needed (e.g., apiKeyParam: 'PARAM:SOME_API_KEY')
+}
+
+// Configuration for a client-side pixel/script action
+export interface PixelConfig {
+	script_template: string; // HTML/JS script template (can include PARAM:* placeholders)
+	// Add other relevant config like placement ('head', 'body') if needed
+}
+
+
+// --- Admin API Types ---
+export interface KvListResponse {
+    keys: { name: string; expiration?: number; metadata?: unknown }[];
+    list_complete: boolean;
+    cursor?: string;
+}
+
+export interface KvWriteRequest {
+    key: string;
+    value: string;
+    expirationTtl?: number; // Optional TTL in seconds
+    metadata?: any; // Optional metadata
+}
+
+export interface KvReadResponse {
+    value: string | null;
+    metadata?: any;
+}
+
+export interface KvDeleteRequest {
+    keys: string[];
 }

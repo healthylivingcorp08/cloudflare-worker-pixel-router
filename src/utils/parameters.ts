@@ -1,299 +1,271 @@
-import { get } from 'lodash-es'; // Using lodash for safe nested property access
-import type { Env as CanonicalEnv, PixelState as CanonicalPixelState } from '../types'; // Import canonical types
+import { Env, PixelState } from '../types';
+import { getCookie, getQueryParam } from './request';
+// Removed crypto import
 
-// Define a basic structure for expected data sources.
-// Replace 'any' with more specific types if they are defined elsewhere in the project.
-interface ConfirmationData {
-  order_id?: string;
-  total_amount?: number | string;
-  sub_total?: number | string;
-  email?: string;
-  phone?: string;
-  products?: Array<{
-    sku?: string;
-    product_name?: string; // Assuming name exists
-    price?: number | string;
-    quantity?: number | string;
-    // ... other product fields
-  }>;
-  // ... other confirmation fields from Sticky.io API response
-}
-
+// Define the structure for the data sources used in parameter population
 export interface DataSources {
-  state: CanonicalPixelState; // Use imported PixelState
-  confirmationData: ConfirmationData;
-  request: Request;
-  env: CanonicalEnv; // Use imported Env
+    state: PixelState;
+    confirmationData: any; // Data from the confirmation page (e.g., order details)
+    request: Request;      // Incoming Cloudflare Request object
+    env: Env;              // Environment variables
 }
 
-/**
- * Safely retrieves a value from the dataSources object based on a parameter key.
- * Handles nested properties and provides default values or transformations.
- *
- * @param key The parameter key (e.g., "ORDER_ID", "CLICK_ID").
- * @param dataSources The object containing all available data.
- * @returns The resolved value, or an empty string if not found/applicable.
- */
-function resolveParameterValue(key: string, dataSources: DataSources): string | number | boolean {
-  const { state, confirmationData, request, env } = dataSources;
-
-  switch (key) {
-    // Confirmation Data
-    case 'ORDER_ID':
-      return get(confirmationData, 'order_id', '');
-    case 'ORDER_TOTAL':
-      return get(confirmationData, 'total_amount', '');
-    case 'ORDER_SUBTOTAL':
-      return get(confirmationData, 'sub_total', '');
-    case 'USER_EMAIL':
-      return get(confirmationData, 'email', '');
-    case 'USER_PHONE':
-      // Basic normalization example: remove non-digits. Adjust if needed.
-      const phone = get(confirmationData, 'phone', '');
-      return typeof phone === 'string' ? phone.replace(/\D/g, '') : '';
-    case 'PRODUCT_SKU':
-      // Example: return first product SKU, adjust if multiple needed
-      return get(confirmationData, 'products[0].sku', '');
-     case 'PRODUCT_NAME':
-      return get(confirmationData, 'products[0].product_name', '');
-     case 'PRODUCT_PRICE':
-       return get(confirmationData, 'products[0].price', '');
-     case 'PRODUCT_QUANTITY':
-       return get(confirmationData, 'products[0].quantity', '');
-
-    // Pixel State Data
-    case 'CLICK_ID': // Everflow transaction_id
-      return get(state, 'trackingParams.click_id', '');
-    case 'AFFID':
-      return get(state, 'trackingParams.affId', '');
-     case 'C1':
-       return get(state, 'trackingParams.c1', '');
-     case 'C2': // Everflow offer_id
-       return get(state, 'trackingParams.c2', '');
-     case 'SUB1':
-       return get(state, 'trackingParams.sub1', '');
-     case 'SUB2':
-       return get(state, 'trackingParams.sub2', '');
-     case 'SUB3':
-       return get(state, 'trackingParams.sub3', '');
-     case 'SUB4':
-       return get(state, 'trackingParams.sub4', '');
-     case 'SUB5':
-       return get(state, 'trackingParams.sub5', '');
-     case 'UID':
-       return get(state, 'trackingParams.uid', '');
-     case 'SOURCE_ID':
-       return get(state, 'trackingParams.source_id', '');
-    case 'FBC':
-      // Prioritize state, could potentially check cookies on request as fallback
-      return get(state, 'trackingParams.fbc', '');
-    case 'FBP':
-      // Prioritize state, could potentially check cookies on request as fallback
-      return get(state, 'trackingParams.fbp', '');
-    case 'IS_SCRUB':
-      return get(state, 'scrubDecision.isScrub', false); // Return boolean
-
-    // Request Data
-    case 'IP_ADDRESS':
-      return request.headers.get('CF-Connecting-IP') || '';
-    case 'USER_AGENT':
-      return request.headers.get('User-Agent') || '';
-    case 'PAGE_URL':
-      return request.url || '';
-
-    // Environment Data
-    case 'FB_PIXEL_ID':
-      return env.FB_PIXEL_ID || '';
-    case 'FB_ACCESS_TOKEN':
-      return env.FB_ACCESS_TOKEN || '';
-    case 'FB_TEST_CODE':
-      // Return empty string if not set, as it's optional
-      return env.FB_TEST_CODE || '';
-
-    // Derived/Generated Data
-    case 'TIMESTAMP_UNIX':
-      return Math.floor(Date.now() / 1000);
-    case 'TIMESTAMP_ISO':
-        return new Date().toISOString();
-
-    // Default fallback
-    default:
-      console.warn(`Unknown parameter key: ${key}`);
-      return ''; // Return empty string for unknown params
-  }
+// Type guard to check if a value is a valid parameter key
+type ParameterKey = `PARAM:${string}`;
+function isParameterKey(key: string): key is ParameterKey {
+    return key.startsWith('PARAM:');
 }
 
-/**
- * Recursively replaces PARAM: placeholders in a string, object, or array.
- *
- * @param template The string, object, or array containing placeholders.
- * @param dataSources The data sources for resolving parameters.
- * @returns The template with placeholders replaced.
- */
-async function replacePlaceholdersRecursive(template: any, dataSources: DataSources): Promise<any> {
-  if (typeof template === 'string') {
-    // Replace PARAM:KEY placeholders in the string
-    return template.replace(/PARAM:([A-Z_0-9]+)/g, (match, key) => {
-      const value = resolveParameterValue(key, dataSources);
-      // Ensure the replacement is a string
-      return String(value);
-    });
-  } else if (Array.isArray(template)) {
-    // Recursively process each item in the array
-    return Promise.all(template.map(item => replacePlaceholdersRecursive(item, dataSources)));
-  } else if (typeof template === 'object' && template !== null) {
-    // Recursively process each value in the object
-    const newObj: { [key: string]: any } = {};
-    for (const key in template) {
-      if (Object.prototype.hasOwnProperty.call(template, key)) {
-        newObj[key] = await replacePlaceholdersRecursive(template[key], dataSources);
-
-        // Omit optional fields like test_event_code if their value resolved to empty string
-        if (key === 'test_event_code' && newObj[key] === '') {
-            delete newObj[key];
-        }
-      }
-    }
-    // Handle specific cases like Facebook CAPI data structure where arrays need specific formatting
-    if (newObj.em && Array.isArray(newObj.em) && newObj.em.length === 1 && newObj.em[0] === '') {
-        // If email resolved to empty string, keep the array structure but empty
-        newObj.em = [];
-    }
-     if (newObj.ph && Array.isArray(newObj.ph) && newObj.ph.length === 1 && newObj.ph[0] === '') {
-        // If phone resolved to empty string, keep the array structure but empty
-        newObj.ph = [];
-    }
-
-    return newObj;
-  } else {
-    // Return non-string/object/array types as is
-    return template;
-  }
+// Helper function to safely access nested properties
+function getNestedValue(obj: any, path: string): any {
+    return path.split('.').reduce((acc, part) => acc && acc[part], obj);
 }
 
+// Function to get the value for a specific parameter
+async function getParameterValue(param: ParameterKey, dataSources: DataSources): Promise<string | number | boolean | undefined> {
+    const { state, confirmationData, request, env } = dataSources;
+    const headers = request.headers;
 
+    // --- Essential Data Source Check ---
+    // Add checks for the most critical data sources needed by common parameters
+    if (!state || !confirmationData || !request || !env) {
+        console.error("populateParameters: Missing essential data sources.", { state, confirmationData, request, env });
+        throw new Error("Missing essential data sources for parameter population.");
+    }
+
+    // --- Parameter Mapping ---
+    switch (param) {
+        // Request Data
+        case 'PARAM:PAGE_URL':
+            return request.url;
+        case 'PARAM:USER_AGENT':
+            return headers.get('User-Agent') || '';
+        case 'PARAM:IP_ADDRESS':
+            return headers.get('CF-Connecting-IP') || ''; // Cloudflare specific header
+        case 'PARAM:REFERRER':
+            return headers.get('Referer') || ''; // Note the spelling 'Referer'
+
+        // Cookie Data (using helper)
+        case 'PARAM:FBP':
+            return getCookie(request, '_fbp') || '';
+        case 'PARAM:FBC':
+            // Special handling for fbc (check query param first, then cookie)
+            return getQueryParam(request, 'fbclid') || getCookie(request, '_fbc') || '';
+        case 'PARAM:TTCLID':
+            return getQueryParam(request, 'ttclid') || ''; // TikTok Click ID Query Param
+
+        // Query Parameter Data (using helper)
+        case 'PARAM:CLICK_ID': // Example: Everflow click ID
+            return state.trackingParams.click_id || getQueryParam(request, 'click_id') || getQueryParam(request, 'ef_click_id') || '';
+        case 'PARAM:AFFID': // Example: Affiliate ID
+            return state.trackingParams.affId || getQueryParam(request, 'affId') || getQueryParam(request, 'affid') || '';
+        case 'PARAM:SUB1':
+            return state.trackingParams.c1 || getQueryParam(request, 'c1') || getQueryParam(request, 'sub1') || '';
+        case 'PARAM:SUB2':
+            return state.trackingParams.c2 || getQueryParam(request, 'c2') || getQueryParam(request, 'sub2') || '';
+        case 'PARAM:SUB3':
+            return state.trackingParams.c3 || getQueryParam(request, 'c3') || getQueryParam(request, 'sub3') || '';
+        case 'PARAM:SUB4':
+            return state.trackingParams.sub4 || getQueryParam(request, 'sub4') || ''; // Assuming sub4 might be less common
+        case 'PARAM:SUB5':
+            return state.trackingParams.sub5 || getQueryParam(request, 'sub5') || ''; // Assuming sub5 might be less common
+        case 'PARAM:UTM_SOURCE':
+            return getQueryParam(request, 'utm_source') || '';
+        case 'PARAM:UTM_MEDIUM':
+            return getQueryParam(request, 'utm_medium') || '';
+        case 'PARAM:UTM_CAMPAIGN':
+            return getQueryParam(request, 'utm_campaign') || '';
+        case 'PARAM:UTM_TERM':
+            return getQueryParam(request, 'utm_term') || '';
+        case 'PARAM:UTM_CONTENT':
+            return getQueryParam(request, 'utm_content') || '';
+        case 'PARAM:GCID': // Google Click ID
+            return getQueryParam(request, 'gclid') || '';
+
+        // Confirmation Data (ensure confirmationData exists)
+        case 'PARAM:ORDER_ID':
+            return confirmationData?.order_id || '';
+        case 'PARAM:ORDER_TOTAL':
+            // Ensure it's a number or string representation of a number
+            return confirmationData?.total_amount ?? '';
+        case 'PARAM:ORDER_SUBTOTAL':
+            return confirmationData?.sub_total ?? '';
+        case 'PARAM:CURRENCY':
+            return confirmationData?.currency || 'USD'; // Default to USD if not provided
+        case 'PARAM:USER_EMAIL':
+            return confirmationData?.email || '';
+        case 'PARAM:USER_PHONE':
+            // Basic phone number cleaning (remove non-digits) - adjust as needed
+            const phone = confirmationData?.phone || '';
+            return phone.replace(/\D/g, '');
+        case 'PARAM:USER_FIRST_NAME':
+            return confirmationData?.firstName || '';
+        case 'PARAM:USER_LAST_NAME':
+            return confirmationData?.lastName || '';
+        case 'PARAM:USER_CITY':
+            return confirmationData?.city || '';
+        case 'PARAM:USER_STATE': // State code (e.g., CA)
+            return confirmationData?.state || '';
+        case 'PARAM:USER_COUNTRY': // Country code (e.g., US)
+            return confirmationData?.country || '';
+        case 'PARAM:USER_ZIP':
+            return confirmationData?.zipCode || '';
+        case 'PARAM:PRODUCTS_SKU_LIST': // Comma-separated list of product SKUs
+             return confirmationData?.products?.map((p: any) => p.sku).join(',') || '';
+        case 'PARAM:PRODUCTS_QUANTITY_LIST': // Comma-separated list of quantities
+             return confirmationData?.products?.map((p: any) => p.quantity).join(',') || '';
+        case 'PARAM:PRODUCTS_PRICE_LIST': // Comma-separated list of prices
+             return confirmationData?.products?.map((p: any) => p.price).join(',') || '';
+
+        // Removed Hashed User Data Parameters
+
+        // State Data
+        case 'PARAM:INTERNAL_TXN_ID':
+            return state.internal_txn_id;
+        case 'PARAM:TIMESTAMP_ISO': // ISO 8601 format timestamp of pixel creation
+            return state.timestamp_created;
+        case 'PARAM:TIMESTAMP_UNIX': // Unix epoch timestamp (seconds)
+            return Math.floor(new Date(state.timestamp_created).getTime() / 1000);
+        case 'PARAM:IS_SCRUBBED': // Boolean indicating if the transaction was scrubbed
+            return state.scrubDecision?.isScrub ?? false;
+        case 'PARAM:SCRUB_TARGET_CAMPAIGN_ID': // Target campaign ID after scrubbing
+            return state.scrubDecision?.targetCampaignId || '';
+
+        // Environment Variables
+        case 'PARAM:FB_PIXEL_ID':
+            return env.FB_PIXEL_ID || '';
+        case 'PARAM:FB_ACCESS_TOKEN':
+            return env.FB_ACCESS_TOKEN || '';
+        case 'PARAM:FB_TEST_CODE': // Optional Facebook test event code
+            return env.FB_TEST_CODE || ''; // Return empty string if not set
+        case 'PARAM:GA_MEASUREMENT_ID':
+            return env.GA_MEASUREMENT_ID || '';
+        case 'PARAM:GA_API_SECRET':
+            return env.GA_API_SECRET || '';
+        case 'PARAM:EF_COMPANY_ID': // Example: Everflow Company ID
+            return env.EF_COMPANY_ID || '';
+        case 'PARAM:EF_API_KEY': // Example: Everflow API Key
+            return env.EF_API_KEY || '';
+
+        // Default: return empty string for unknown parameters
+        default:
+            console.warn(`Unknown parameter: ${param}`);
+            return '';
+    }
+}
+
+// --- Overloads for populateParameters ---
 /**
- * Populates placeholders (e.g., PARAM:ORDER_ID) in a template string or object
- * using data from various sources like KV state, API responses, request details, and environment variables.
- *
- * @param template The template string or object containing PARAM: placeholders.
- * @param dataSources An object containing the necessary data sources (`state`, `confirmationData`, `request`, `env`).
- * @returns A promise resolving to the populated template (string or object).
- * @throws Error if essential data sources are missing.
+ * Populates placeholders in a template string with dynamic data.
  */
 export async function populateParameters(
-  template: string | object,
-  dataSources: DataSources
-): Promise<string | object> {
-  if (!dataSources || !dataSources.state || !dataSources.confirmationData || !dataSources.request || !dataSources.env) {
-    console.error("populateParameters: Missing essential data sources.", dataSources);
-    throw new Error("Missing essential data sources for parameter population.");
-  }
+    template: string,
+    dataSources: DataSources
+): Promise<string>;
 
-  try {
-    // Use lodash-es if available, otherwise fallback to basic check
-     // Ensure lodash-es is installed: npm install lodash-es @types/lodash-es
-     // If not using lodash, remove the import and the get() usage in resolveParameterValue
-     // and implement manual safe navigation.
+/**
+ * Populates placeholders in a template object with dynamic data.
+ */
+export async function populateParameters<T extends object>(
+    template: T,
+    dataSources: DataSources
+): Promise<T>;
 
-    return await replacePlaceholdersRecursive(template, dataSources);
-  } catch (error) {
-    console.error("Error during parameter population:", error);
-    // Depending on desired behavior, either re-throw or return template unprocessed/partially processed
-    // For now, re-throwing to indicate failure clearly.
-    throw new Error(`Parameter population failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
+/**
+ * Implementation of populateParameters.
+ * Populates placeholders in a template string or object with dynamic data.
+ * Placeholders are in the format PARAM:KEY_NAME.
+ *
+ * @param template The string or object template containing placeholders.
+ * @param dataSources An object containing all necessary data sources.
+ * @returns The populated template (string or object).
+ */
+export async function populateParameters(
+    template: string | object,
+    dataSources: DataSources
+): Promise<string | object> { // Implementation signature returns the union type
+    if (typeof template === 'string') {
+        // Handle string templates
+        let populatedString = template;
+        const paramRegex = /PARAM:[A-Z0-9_]+/g;
+        const params = template.match(paramRegex) as ParameterKey[] | null;
+
+        if (params) {
+            for (const param of params) {
+                const value = await getParameterValue(param, dataSources);
+                // Replace all occurrences of the parameter
+                // Ensure value is stringified appropriately
+                const replacement = (typeof value === 'boolean' || typeof value === 'number') ? String(value) : (value || '');
+                populatedString = populatedString.replace(new RegExp(param.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g'), replacement);
+            }
+        }
+        return populatedString; // Return type matches the string overload
+
+    } else if (typeof template === 'object' && template !== null) {
+        // Handle object templates (deep copy and recursive population)
+        const originalTemplate = JSON.parse(JSON.stringify(template)); // Keep original for optional key check
+        const populatedObject = JSON.parse(JSON.stringify(template)); // Work on a copy
+
+        async function populateRecursively(obj: any, originalObj: any) {
+            for (const key in obj) {
+                if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                    const value = obj[key];
+                    const originalValue = originalObj ? originalObj[key] : undefined; // Get corresponding original value
+
+                    if (typeof value === 'string' && isParameterKey(value)) {
+                        const paramValue = await getParameterValue(value, dataSources);
+                        // Store the resolved value (could be empty string)
+                        obj[key] = (typeof paramValue === 'boolean' || typeof paramValue === 'number') ? String(paramValue) : (paramValue || '');
+                    } else if (Array.isArray(value)) {
+                        // Recurse into arrays
+                        obj[key] = await Promise.all(value.map(async (item, index) => {
+                            const originalItem = Array.isArray(originalValue) ? originalValue[index] : undefined;
+                            if (typeof item === 'string' && isParameterKey(item)) {
+                                const paramValue = await getParameterValue(item, dataSources);
+                                return (typeof paramValue === 'boolean' || typeof paramValue === 'number') ? String(paramValue) : (paramValue || '');
+                            } else if (typeof item === 'object' && item !== null) {
+                                await populateRecursively(item, originalItem);
+                                return item; // Return the modified object
+                            }
+                            return item; // Return non-string/non-object items unchanged
+                        }));
+                    } else if (typeof value === 'object' && value !== null) {
+                        // Recurse into nested objects
+                        await populateRecursively(value, originalValue);
+                    }
+                }
+            }
+        }
+
+        await populateRecursively(populatedObject, originalTemplate);
+
+        // --- Post-population cleanup for optional parameters ---
+        // Iterate again to remove keys where the original template had a PARAM:*
+        // and the resolved value is now an empty string.
+        function cleanupOptionalParams(obj: any, originalObj: any) {
+            for (const key in obj) {
+                if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                    const value = obj[key];
+                    const originalValue = originalObj ? originalObj[key] : undefined;
+
+                    if (typeof value === 'object' && value !== null) {
+                        // Recurse first to handle nested objects
+                        cleanupOptionalParams(value, originalValue);
+                    } else if (value === '' && typeof originalValue === 'string' && isParameterKey(originalValue)) {
+                        // If current value is empty string AND original was a PARAM:*, delete the key
+                        // Add specific exceptions if needed (e.g., if PARAM:SOME_KEY should allow empty string)
+                        // Example exception: if (originalValue === 'PARAM:ALLOW_EMPTY') continue;
+                        delete obj[key];
+                    }
+                }
+            }
+        }
+
+        cleanupOptionalParams(populatedObject, originalTemplate);
+
+        return populatedObject; // Return type matches the object overload
+    } else {
+        // Should not happen due to type constraints, but satisfy TS
+        return template;
+    }
 }
-
-// Example Usage (Conceptual - requires actual data)
-/*
-async function test() {
-  const mockState: CanonicalPixelState = { // Use CanonicalPixelState for mock
-    internal_txn_id: 'test-123',
-    timestamp_created: new Date().toISOString(),
-    status: 'success',
-    trackingParams: {
-      click_id: 'ef-click-xyz',
-      affId: 'network1',
-      c1: 'affiliate123',
-      fbc: 'fb.1.testfbc',
-      fbp: 'fb.1.testfbp',
-    },
-    scrubDecision: { isScrub: false, targetCampaignId: '4' },
-    // Add other required fields from CanonicalPixelState if necessary
-    processed_Initial: false,
-    timestamp_processed_Initial: null,
-    processed_Upsell_1: false,
-    timestamp_processed_Upsell_1: null,
-    processed_Upsell_2: false,
-    timestamp_processed_Upsell_2: null,
-    // ... etc for other upsells
-  };
-
-  const mockConfirmation: ConfirmationData = {
-    order_id: 'sticky-order-456',
-    total_amount: 49.99,
-    email: 'test@example.com',
-    phone: '123-456-7890',
-    products: [{ sku: 'PROD001' }]
-  };
-
-  const mockRequest = new Request("https://example.com/checkout?sub1=hello", {
-      headers: {
-          'CF-Connecting-IP': '192.168.1.1',
-          'User-Agent': 'TestAgent/1.0'
-      }
-  });
-
-  const mockEnv: CanonicalEnv = { // Use CanonicalEnv for mock
-    PIXEL_STATE: {} as any, // Mock KV Namespace
-    PIXEL_CONFIG: {} as any, // Mock KV Namespace
-    AUTH_KV: {} as any, // Mock KV Namespace
-    ADMIN_USERNAME: 'admin',
-    ADMIN_PASSWORD_HASH: 'hash',
-    JWT_SECRET: 'secret',
-    // Add other required env vars from CanonicalEnv
-    FB_PIXEL_ID: 'fpix_123',
-    FB_ACCESS_TOKEN: 'fb_token_abc',
-    // FB_TEST_CODE: 'TEST12345' // Optional
-  };
-
-  const dataSources: DataSources = {
-    state: mockState,
-    confirmationData: mockConfirmation,
-    request: mockRequest,
-    env: mockEnv,
-  };
-
-  const stringTemplate = "Order ID: PARAM:ORDER_ID, Click ID: PARAM:CLICK_ID, IP: PARAM:IP_ADDRESS, Timestamp: PARAM:TIMESTAMP_UNIX";
-  const objectTemplate = {
-    event: "Purchase",
-    userData: {
-      email: "PARAM:USER_EMAIL",
-      fbc: "PARAM:FBC",
-      fbp: "PARAM:FBP",
-      ip: "PARAM:IP_ADDRESS",
-      agent: "PARAM:USER_AGENT"
-    },
-    customData: {
-      orderId: "PARAM:ORDER_ID",
-      value: "PARAM:ORDER_TOTAL",
-      isScrubbed: "PARAM:IS_SCRUB", // Note: boolean becomes string here
-      optionalCode: "PARAM:FB_TEST_CODE" // Will be empty string if not in env
-    },
-    timestamp: "PARAM:TIMESTAMP_UNIX"
-  };
-
-  try {
-    const populatedString = await populateParameters(stringTemplate, dataSources);
-    console.log("Populated String:", populatedString);
-
-    const populatedObject = await populateParameters(objectTemplate, dataSources);
-    console.log("Populated Object:", JSON.stringify(populatedObject, null, 2));
-  } catch (e) {
-      console.error("Test failed:", e);
-  }
-}
-
-// test(); // Uncomment to run test locally if needed
-*/
