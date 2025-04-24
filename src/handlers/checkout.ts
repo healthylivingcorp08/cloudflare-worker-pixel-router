@@ -66,6 +66,7 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
         state.paymentMethod_Initial = determinedPaymentMethod;
         ctx.waitUntil(
             env.PIXEL_STATE.put(stateKey, JSON.stringify(state))
+                .then(() => console.log(`[CheckoutHandler] KV PUT attempted for ${stateKey} (paymentMethod update)`)) // Add confirmation log
                 .catch(err => console.error(`[CheckoutHandler] Failed to update KV state (paymentMethod) for ${internal_txn_id}: ${err.message}`))
         );
         console.log(`[CheckoutHandler] Updated paymentMethod_Initial to ${determinedPaymentMethod} for ${internal_txn_id}`);
@@ -145,7 +146,8 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             shippingState: checkoutPayload.customer?.shippingAddress?.state,
             shippingZip: checkoutPayload.customer?.shippingAddress?.zip,
             shippingCountry: checkoutPayload.customer?.shippingAddress?.country,
-            billingSameAsShipping: checkoutPayload.billingSameAsShipping ? 'YES' : 'NO',
+            // Correctly determine based on the presence of billingAddress in the payload from frontend
+            billingSameAsShipping: checkoutPayload.customer?.billingAddress === null ? 'YES' : 'NO',
 
             // Transaction Details (Required)
             tranType: 'Sale',
@@ -160,7 +162,11 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
                     offer_id: p.offer_id, // Access offer_id sent by frontend
                     billing_model_id: p.billing_model_id, // Access billing_model_id sent by frontend
                     quantity: p.quantity ?? 1,
-                    // price: p.price // Optional? Check Sticky docs
+                    priceRate: p.priceRate ?? p.price,
+                    discountPrice: p.discountPrice ?? p.price,
+                    regPrice: p.regPrice ?? p.price,
+                    shipPrice: p.shipPrice ?? 0,
+                    price: p.price
                 };
             }) || [], // Ensure it's an array
             ipAddress: ipAddress, // Required
@@ -194,10 +200,23 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             if (payloadToSend[key] === undefined || payloadToSend[key] === null) {
                 delete payloadToSend[key];
             }
-            // Special check for offers array - ensure it's not empty if present
-            if (key === 'offers' && Array.isArray(payloadToSend[key]) && payloadToSend[key].length === 0) {
-                 console.warn(`[CheckoutHandler] Removing empty 'offers' array from payload for ${internal_txn_id}`);
-                 delete payloadToSend[key]; // Remove empty offers array if Sticky requires it to be non-empty when present
+            // Special handling for offers array
+            if (key === 'offers' && Array.isArray(payloadToSend[key])) {
+                if (payloadToSend[key].length === 0) {
+                    console.warn(`[CheckoutHandler] Removing empty 'offers' array from payload for ${internal_txn_id}`);
+                    delete payloadToSend[key];
+                } else {
+                    // Clean each offer item but preserve price fields
+                    payloadToSend[key] = payloadToSend[key].map((offer: any) => {
+                        const cleanOffer: any = {};
+                        Object.keys(offer).forEach((offerKey) => {
+                            if (offer[offerKey] !== undefined && offer[offerKey] !== null) {
+                                cleanOffer[offerKey] = offer[offerKey];
+                            }
+                        });
+                        return cleanOffer;
+                    });
+                }
             }
         });
 
@@ -215,11 +234,9 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
 
         if (stickyOrderId && state) { // Check if state is not null
             state.stickyOrderId_Initial = String(stickyOrderId);
-            ctx.waitUntil(
-                env.PIXEL_STATE.put(stateKey, JSON.stringify(state))
-                    .catch(err => console.error(`[CheckoutHandler] Failed to update KV state (stickyOrderId) for ${internal_txn_id}: ${err.message}`))
-            );
-            console.log(`[CheckoutHandler] Stored stickyOrderId_Initial ${stickyOrderId} for ${internal_txn_id}`);
+            // Await the KV put to ensure it completes before responding
+            await env.PIXEL_STATE.put(stateKey, JSON.stringify(state));
+            console.log(`[CheckoutHandler] Stored stickyOrderId_Initial ${stickyOrderId} for ${internal_txn_id} (await completed)`);
         }
 
         if (stickyResponse.response_code === '100') {
@@ -229,10 +246,16 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             ctx.waitUntil(triggerResultPromise);
             const triggerResult = await triggerResultPromise;
 
+            // Ensure the correct orderId is returned in the response
             const successResponse = {
                 success: true,
-                orderId: stickyOrderId,
+                orderId: String(stickyOrderId), // Use the variable holding the ID from Sticky
                 clientSideActions: triggerResult.clientSideActions || []
+                // Add other necessary fields from stickyResponse if needed by frontend context
+                // Example: shippingId, ipAddress, campaignId (might be redundant if already in context)
+                // shippingId: stickyResponse.shipping_id, // Adjust field name based on actual Sticky response
+                // ipAddress: ipAddress, // Already have this
+                // campaignId: targetCampaignId, // Already have this
             };
             return addCorsHeaders(new Response(JSON.stringify(successResponse), { status: 200, headers: { 'Content-Type': 'application/json' } }), request);
 
@@ -247,6 +270,7 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
                         .catch(err => console.error(`[CheckoutHandler] Failed to update KV state (paypal_redirect) for ${internal_txn_id}: ${err.message}`))
                 );
             }
+            console.log(`[CheckoutHandler] KV PUT attempted for ${stateKey} (paypal_redirect status update)`); // Add confirmation log
             const redirectResponse = {
                 success: true,
                 redirectUrl: redirectUrl,
@@ -265,6 +289,7 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
                         .catch(err => console.error(`[CheckoutHandler] Failed to update KV state (failed) for ${internal_txn_id}: ${err.message}`))
                 );
             }
+            console.log(`[CheckoutHandler] KV PUT attempted for ${stateKey} (failed status update)`); // Add confirmation log
             const errorResponse = {
                 success: false,
                 message: `Payment failed: ${errorMessage}`,
@@ -284,7 +309,11 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
                 if (currentStateString) {
                     let currentState: PixelState = JSON.parse(currentStateString);
                     currentState.status = 'failed';
-                    ctx.waitUntil(env.PIXEL_STATE.put(stateKey, JSON.stringify(currentState)));
+                    ctx.waitUntil(
+                        env.PIXEL_STATE.put(stateKey, JSON.stringify(currentState))
+                            .then(() => console.log(`[CheckoutHandler] KV PUT attempted for ${stateKey} (error handling failed status update)`)) // Add confirmation log
+                            .catch(err => console.error(`[CheckoutHandler] Error handling KV PUT failed: ${err.message}`))
+                    );
                 }
             } catch (kvError) {
                 console.error(`[CheckoutHandler] Failed to update state to 'failed' during error handling for ${stateKey}:`, kvError);

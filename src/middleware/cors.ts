@@ -49,6 +49,10 @@ export function addCorsHeaders(response: Response, request: Request): Response {
       // Ensure Vary header is set to Origin to prevent caching issues
       response.headers.set('Vary', 'Origin');
       response.headers.set('Access-Control-Allow-Origin', origin);
+      // Also add Allow-Headers to the actual response for good measure, though primarily for preflight
+      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Internal-Transaction-Id, X-Target-Campaign-Id');
+      // If the client needs to READ headers from the response, use Expose-Headers
+      // response.headers.set('Access-Control-Expose-Headers', '...');
    }
    return response;
 }

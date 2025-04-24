@@ -125,6 +125,50 @@ export interface StickyPayload {
 	// Add other fields as needed by Sticky.io API
 }
 
+// Order confirmation data structure
+export interface OrderConfirmation {
+    orderId: string;
+    orderNumbers?: string;
+    customerEmail?: string;
+    products: Product[];
+    shippingFee?: number;
+    totalValue?: number;
+    billingAddress?: Address;
+    shippingAddress?: Address;
+}
+
+// Product information
+export interface Product {
+    product_name: string;
+    quantity: number;
+    unitPrice: number;
+    product_id?: string;
+    priceRate?: number;
+    discountPrice?: number;
+    regPrice?: number;
+    shipPrice?: number;
+    price?: number;
+}
+
+// Address information
+export interface Address {
+    address1?: string;
+    address2?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    country?: string;
+}
+
+// Extended order confirmation with additional fields
+export interface ExtendedOrderConfirmation extends OrderConfirmation {
+    orderNumbers: string;
+    products: Product[];
+    shippingFee: number;
+    totalValue: number;
+    creditCardType?: string;
+}
+
 // Structure for encrypted data (assuming AES-GCM)
 export interface EncryptedData {
 	iv: string; // Initialization Vector (hex encoded)

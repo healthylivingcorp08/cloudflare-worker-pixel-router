@@ -61,8 +61,8 @@ const actionEfClickPixelTemplate = JSON.stringify({
 const defaultSiteKvEntries = {
   // Scrub Rules & Campaign IDs
   "global_scrub_percent": "10", // Default 10%
-  "normal_campaign_id": "4",    // Default normal campaign ID
-  "scrub_campaign_id": "5",     // Default scrub campaign ID
+  "normal_campaign_id": "4",    // Default normal campaign ID (Checkout)
+  "scrub_campaign_id": "5",     // Default scrub campaign ID (Checkout)
 
   // Payout Rules
   "payout_steps": "1", // Default to initial checkout only

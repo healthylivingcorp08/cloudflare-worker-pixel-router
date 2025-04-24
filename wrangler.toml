@@ -22,8 +22,7 @@ ENCRYPTION_SECRET = "123" # !!! REPLACE THIS WITH A REAL SECRET !!!
 
 [[env.dev.kv_namespaces]]
 binding = "PIXEL_CONFIG"
-# id = "d6db5d0cfcb14e98b2d7f1bd5567f74f" # Omit ID to use local simulation
-# preview = true # Omit preview flag
+preview_id = "" # Explicitly enable local simulation
 
 [[env.dev.kv_namespaces]]
 binding = "PIXEL_STATE"

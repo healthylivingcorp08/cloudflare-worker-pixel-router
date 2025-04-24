@@ -1,14 +1,8 @@
-import { Env, OrderConfirmation, Address, Product } from '../types'; // Import necessary types
+import { Env, ExtendedOrderConfirmation, Product, Address } from '../types'; // Import necessary types
 import { ExecutionContext } from '@cloudflare/workers-types';
 import { addCorsHeaders } from '../middleware/cors';
 import { callStickyOrderView } from '../lib/sticky'; // Import the Sticky.io library function
-
-// Define an extended interface locally if not already in types.ts
-interface ExtendedOrderConfirmation extends OrderConfirmation {
-  email?: string;
-  phone?: string;
-  billingAddress?: Address;
-}
+import { getDefaultProductPrice } from '../utils/productPrices';
 
 /**
  * Handles POST requests to /api/order-details.
@@ -32,7 +26,7 @@ export async function handleOrderDetails(request: Request, env: Env, ctx: Execut
     const stickyResponse = await callStickyOrderView([orderIdStr], env); // Pass order ID as an array
 
     console.log(`[OrderDetailsHandler] Sticky.io Order View Response Status: ${stickyResponse._status}`);
-    // console.log(`[OrderDetailsHandler] Sticky.io Order View Response Body: ${JSON.stringify(stickyResponse)}`);
+    console.log(`[OrderDetailsHandler] Sticky.io Order View Response Body: ${JSON.stringify(stickyResponse)}`);
 
     // --- 2. Handle Sticky.io Response ---
     // Check for HTTP errors or API-level errors reported by callStickyOrderView
@@ -52,37 +46,66 @@ export async function handleOrderDetails(request: Request, env: Env, ctx: Execut
 
     // --- 3. Map Sticky.io response to OrderConfirmation ---
     const mappedOrder: ExtendedOrderConfirmation = {
+      orderId: stickyData.order_id?.toString() || orderIdStr,
       orderNumbers: stickyData.order_id?.toString() || orderIdStr,
-      firstName: stickyData.shipping_first_name || stickyData.billing_first_name || 'N/A',
-      lastName: stickyData.shipping_last_name || stickyData.billing_last_name || 'N/A',
-      email: stickyData.email || stickyData.billing_email || undefined,
-      phone: stickyData.phone || undefined,
+      customerEmail: stickyData.email || stickyData.billing_email || undefined,
+      products: (stickyData.products || []).map((item: any): Product => ({
+        product_name: item.name || 'Unknown Product',
+        quantity: parseInt(item.product_qty || '1'),
+        unitPrice: (() => {
+          // Try price fields in order of preference
+          let price = parseFloat(item.price || item.discountPrice || item.priceRate || item.regPrice || '0');
+          
+          // If price is 0, try orderTotal split
+          if (price === 0 && stickyData.orderTotal > 0) {
+            price = stickyData.orderTotal / (stickyData.products?.length || 1);
+          }
+          
+          // If still 0, use default price from product config
+          if (price === 0) {
+            const defaultPrice = getDefaultProductPrice(item.product_id);
+            if (defaultPrice > 0) {
+              price = defaultPrice;
+              console.warn(`[OrderDetailsHandler] Using default price ${defaultPrice} for product ${item.product_id}`);
+            } else {
+              console.error(`[OrderDetailsHandler] No valid price found for product ${item.product_id}`);
+            }
+          }
+          
+          return price;
+        })(),
+        priceRate: parseFloat(item.priceRate || '0'),
+        discountPrice: parseFloat(item.discountPrice || '0'),
+        regPrice: parseFloat(item.regPrice || '0'),
+        shipPrice: parseFloat(item.shipPrice || '0'),
+        product_id: item.product_id
+      })),
+      shippingFee: parseFloat(stickyData.totals_breakdown?.shipping ?? stickyData.shipping_amount ?? '0'),
+      billingAddress: {
+        address1: stickyData.billing_street_address || '',
+        address2: stickyData.billing_street_address2 || undefined,
+        city: stickyData.billing_city || '',
+        state: stickyData.billing_state || '',
+        country: stickyData.billing_country || '',
+        zip: stickyData.billing_postcode || ''
+      },
       shippingAddress: {
         address1: stickyData.shipping_street_address || '',
         address2: stickyData.shipping_street_address2 || undefined,
         city: stickyData.shipping_city || '',
         state: stickyData.shipping_state || '',
         country: stickyData.shipping_country || '',
-        zip: stickyData.shipping_postcode || '',
+        zip: stickyData.shipping_postcode || ''
       },
-      billingAddress: { // Add billingAddress mapping
-        address1: stickyData.billing_street_address || '',
-        address2: stickyData.billing_street_address2 || undefined,
-        city: stickyData.billing_city || '',
-        state: stickyData.billing_state || '',
-        country: stickyData.billing_country || '',
-        zip: stickyData.billing_postcode || '',
-      },
-      products: (stickyData.products || []).map((item: any): Product => ({ // Ensure return type is Product
-        product_name: item.name || 'Unknown Product',
-        quantity: parseInt(item.product_qty || '1'),
-        unitPrice: parseFloat(item.price || '0'),
-        // regPrice: parseFloat(item.regular_price || '0'), // Optional
-        // imageUrl: item.image_url || undefined // Optional
-      })),
-      shippingFee: parseFloat(stickyData.totals_breakdown?.shipping ?? stickyData.shipping_amount ?? '0'),
-      creditCardType: stickyData.credit_card_type, // Map credit card type
+      creditCardType: stickyData.credit_card_type,
+      totalValue: 0 // Will be calculated below
     };
+
+    // Calculate total value after mappedOrder is fully defined
+    // Calculate total value
+    mappedOrder.totalValue = mappedOrder.products.reduce((sum, product) => {
+      return sum + (product.unitPrice * product.quantity);
+    }, 0) + mappedOrder.shippingFee;
     // --- End Mapping ---
 
     // --- 4. Return Success Response ---

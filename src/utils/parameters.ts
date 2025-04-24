@@ -86,8 +86,12 @@ async function getParameterValue(param: ParameterKey, dataSources: DataSources):
         case 'PARAM:ORDER_ID':
             return confirmationData?.order_id || '';
         case 'PARAM:ORDER_TOTAL':
-            // Ensure it's a number or string representation of a number
-            return confirmationData?.total_amount ?? '';
+            // Handle both standard and upsell order totals
+            return confirmationData?.priceRate || // Upsell price
+                   confirmationData?.total_amount || // Standard order total
+                   confirmationData?.discountPrice || // Alternative upsell price
+                   confirmationData?.regPrice || // Another upsell price variant
+                   ''; // Fallback
         case 'PARAM:ORDER_SUBTOTAL':
             return confirmationData?.sub_total ?? '';
         case 'PARAM:CURRENCY':

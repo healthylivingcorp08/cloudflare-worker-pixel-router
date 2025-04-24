@@ -22,6 +22,18 @@ export async function routeRequest(request: Request, env: Env, ctx: ExecutionCon
 
     console.log(`[Router] Received ${method} request for ${pathname}`);
 
+    // --- DEBUG: Log all incoming headers for /api/upsell ---
+    if (pathname === '/api/upsell' && method === 'POST') {
+        console.log('[Router] DEBUG: Inside /api/upsell header log block.');
+        console.log(`[Router] DEBUG: Origin header: ${request.headers.get('Origin')}`); // Log Origin header
+        const headersObject: Record<string, string> = {};
+        request.headers.forEach((value, key) => {
+            headersObject[key] = value;
+        });
+        console.log('[Router] Incoming headers for /api/upsell:', JSON.stringify(headersObject));
+    }
+    // --- END DEBUG ---
+
     try {
         // --- Handle OPTIONS requests for CORS preflight ---
         const apiOptionsPaths = [

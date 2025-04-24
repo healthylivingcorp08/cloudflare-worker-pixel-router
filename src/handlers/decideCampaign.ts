@@ -10,23 +10,34 @@ import { addCorsHeaders } from '../middleware/cors';
 export async function handleDecideCampaign(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   try {
     console.log('[DecideCampaignHandler] Received request');
-    const body = await request.json() as any; // Use 'any' for flexibility
+    let body: any;
+    try {
+        body = await request.json();
+        console.log('[DecideCampaignHandler] DEBUG: Received body:', JSON.stringify(body)); // Log the received body
+    } catch (e) {
+        console.error('[DecideCampaignHandler] Failed to parse JSON body:', e);
+        return addCorsHeaders(new Response(JSON.stringify({ message: 'Invalid JSON body' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
+    }
     // Extract known tracking params, collect others
-    const { internal_txn_id, affId, c1, sub1, sub2, sub3, uid, click_id, fbc, fbp, utm_source, utm_medium, utm_campaign, utm_content, utm_term, ...otherTrackingParams } = body;
+    // Extract siteId along with other params
+    const { siteId, internal_txn_id, affId, c1, sub1, sub2, sub3, uid, click_id, fbc, fbp, utm_source, utm_medium, utm_campaign, utm_content, utm_term, ...otherTrackingParams } = body;
 
-    if (!internal_txn_id) {
-      return addCorsHeaders(new Response(JSON.stringify({ message: 'Missing internal_txn_id' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
+    // Validate required fields
+    if (!internal_txn_id || !siteId) {
+        const missing = [!internal_txn_id && 'internal_txn_id', !siteId && 'siteId'].filter(Boolean).join(', ');
+        return addCorsHeaders(new Response(JSON.stringify({ message: `Missing required fields: ${missing}` }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
     }
 
     // 1. Fetch scrub rules and campaign IDs from PIXEL_CONFIG
     // Use more descriptive keys if possible, matching potential admin UI setup
-    const globalScrubKey = 'config_global_scrub_percent';
-    const networkScrubKey = `config_network_scrub:${affId}`; // Key by network ID (affId)
-    const affiliateScrubKey = `config_affiliate_scrub:${c1}`; // Key by affiliate ID (c1)
-    const normalCampaignIdKey = 'config_normal_campaign_id';
-    const scrubCampaignIdKey = 'config_scrub_campaign_id';
+    // Use siteId prefix for config keys
+    const globalScrubKey = `${siteId}_global_scrub_percent`;
+    const networkScrubKey = affId ? `${siteId}_network_scrub:${affId}` : null; // Key by network ID (affId)
+    const affiliateScrubKey = c1 ? `${siteId}_affiliate_scrub:${c1}` : null; // Key by affiliate ID (c1)
+    const normalCampaignIdKey = `${siteId}_normal_campaign_id`;
+    const scrubCampaignIdKey = `${siteId}_scrub_campaign_id`;
 
-    console.log(`[DecideCampaignHandler] Fetching KV: ${globalScrubKey}, ${networkScrubKey}, ${affiliateScrubKey}, ${normalCampaignIdKey}, ${scrubCampaignIdKey}`);
+    console.log(`[DecideCampaignHandler] Fetching KV for site ${siteId}: ${globalScrubKey}, ${networkScrubKey || 'N/A'}, ${affiliateScrubKey || 'N/A'}, ${normalCampaignIdKey}, ${scrubCampaignIdKey}`);
 
     const [
       globalScrubValue,
@@ -36,8 +47,8 @@ export async function handleDecideCampaign(request: Request, env: Env, ctx: Exec
       scrubCampaignIdValue
     ] = await Promise.all([
       env.PIXEL_CONFIG.get(globalScrubKey),
-      affId ? env.PIXEL_CONFIG.get(networkScrubKey) : Promise.resolve(null),
-      c1 ? env.PIXEL_CONFIG.get(affiliateScrubKey) : Promise.resolve(null),
+      networkScrubKey ? env.PIXEL_CONFIG.get(networkScrubKey) : Promise.resolve(null),
+      affiliateScrubKey ? env.PIXEL_CONFIG.get(affiliateScrubKey) : Promise.resolve(null),
       env.PIXEL_CONFIG.get(normalCampaignIdKey),
       env.PIXEL_CONFIG.get(scrubCampaignIdKey)
     ]);
@@ -70,6 +81,7 @@ export async function handleDecideCampaign(request: Request, env: Env, ctx: Exec
     // 5. Construct initial KV state
     const initialState: PixelState = {
       internal_txn_id: internal_txn_id,
+      siteId: siteId, // Add siteId to the state
       timestamp_created: new Date().toISOString(),
       status: 'pending',
       trackingParams: { // Store all relevant tracking params explicitly
