@@ -5,7 +5,8 @@ const allowedOrigins = [
   'https://*.space-7z6.pages.dev', // Allow any subdomain for Cloudflare Pages previews/prod
   'https://space-7z6.pages.dev',   // Allow the root Cloudflare Pages domain
   'http://127.0.0.1:8787', // Wrangler dev server origin
-  'http://localhost:3001' // Drivebright local dev origin
+  'http://localhost:3001', // Drivebright local dev origin
+  'https://cloudflare-pixel-admin-ui-website.pages.dev/login' // admin login page to change kv
 ];
 
 /**
