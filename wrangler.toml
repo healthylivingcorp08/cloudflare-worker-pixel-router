@@ -5,7 +5,6 @@ compatibility_flags = ["nodejs_compat"]
 
 [site]
 bucket = "./src/admin/ui"
-pages_build_output_dir = ".vercel/output/static"
 # KV Namespace for pixel configuration
 [[kv_namespaces]]
 binding = "PIXEL_CONFIG"
@@ -52,3 +51,7 @@ enabled = true
 
 
 
+
+# Configuration specific to Cloudflare Pages build
+[pages_build_output]
+dir = ".vercel/output/static"
