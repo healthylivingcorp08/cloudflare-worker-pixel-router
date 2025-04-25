@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from '@/lib/api';
-import { KVPair } from '../../../../types'; // Corrected relative path
+import { KVPair } from '@/lib/admin-types'; // Use local types
 import { toast } from "sonner"; // Import toast
 
 interface EditKVDialogProps {
