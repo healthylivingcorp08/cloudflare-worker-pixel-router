@@ -52,6 +52,3 @@ enabled = true
 
 
 
-# Configuration specific to Cloudflare Pages build
-[pages_build_output]
-dir = ".vercel/output/static"
