@@ -1,10 +1,11 @@
 name = "cloudflare-worker-pixel-router"
 main = "src/index.ts"
-compatibility_date = "2025-04-01"
+compatibility_date = ["2025-04-01"]
 compatibility_flags = ["nodejs_compat"]
 
 [site]
 bucket = "./src/admin/ui"
+pages_build_output_dir = ".vercel/output/static"
 # KV Namespace for pixel configuration
 [[kv_namespaces]]
 binding = "PIXEL_CONFIG"
