@@ -5,13 +5,14 @@ import { Env } from '../types'; // Assuming types are in ../types
  * Handles authentication, request construction, and basic response parsing.
  */
 async function callStickyApi(endpoint: string, payload: any, env: Env, method: string = 'POST'): Promise<any> {
-    const stickyBaseUrl = env.STICKY_API_URL; // Use the base URL from env
+    const stickyBaseUrl = "https://techcommerceunlimited.sticky.io/api/v1"; // Hardcoded API URL
     const stickyApiUser = env.STICKY_USERNAME;
     const stickyApiPass = env.STICKY_PASSWORD;
 
-    if (!stickyBaseUrl || !stickyApiUser || !stickyApiPass) {
-        console.error('[StickyLib] Sticky.io API URL or credentials missing in environment secrets.');
-        throw new Error('Sticky.io API configuration missing');
+    // Check only for username and password now, as URL is hardcoded
+    if (!stickyApiUser || !stickyApiPass) {
+        console.error('[StickyLib] Sticky.io credentials missing in environment secrets.');
+        throw new Error('Sticky.io API credentials missing'); // Updated error message
     }
 
     // Ensure the base URL doesn't end with a slash and the endpoint doesn't start with one
