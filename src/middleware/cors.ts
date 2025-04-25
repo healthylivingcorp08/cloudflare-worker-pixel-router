@@ -3,6 +3,7 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'https://*.space-7z6.pages.dev', // Allow any subdomain for Cloudflare Pages previews/prod
+  'https://space-7z6.pages.dev',   // Allow the root Cloudflare Pages domain
   'http://127.0.0.1:8787', // Wrangler dev server origin
   'http://localhost:3001' // Drivebright local dev origin
 ];
