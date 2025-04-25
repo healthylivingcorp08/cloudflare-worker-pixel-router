@@ -1,5 +1,6 @@
 import { Env } from '../../types';
 import { AuthenticatedRequest, JWTClaims, UserRole, ROLE_PERMISSIONS } from '../types';
+import { verify, decode } from '@tsndr/cloudflare-worker-jwt';
 
 /**
  * Helper to create a JSON response
@@ -40,18 +41,39 @@ export function hasPermission(role: UserRole, permission: string): boolean {
 /**
  * Verify authentication token
  */
-export function verifyAuthToken(token: string): boolean {
+export async function verifyAuthToken(token: string, secret: string): Promise<JWTClaims | null> {
   try {
-    console.log('[Auth] Verifying token:', token);
-    const [username, timestamp] = atob(token).split(':');
-    const tokenAge = Date.now() - parseInt(timestamp);
-    // Token valid for 24 hours
-    const isValid = tokenAge < 24 * 60 * 60 * 1000;
-    console.log('[Auth] Token age:', tokenAge, 'isValid:', isValid);
-    return isValid;
+    console.log('[Auth] Verifying JWT token...');
+    const isValid = await verify(token, secret);
+    if (isValid) {
+      console.log('[Auth] JWT token is valid.');
+      const { payload } = decode(token);
+      // Basic validation of payload structure (adjust as needed)
+      if (payload && typeof payload === 'object' && payload.sub && payload.exp) {
+         // Check expiration manually as verify might not always catch it depending on options
+         if (payload.exp * 1000 < Date.now()) {
+            console.warn('[Auth] JWT token is expired.');
+            return null;
+         }
+         console.log('[Auth] JWT payload decoded:', payload);
+         // Assuming the payload structure matches or can be cast to JWTClaims
+         // Add role if missing, default to 'viewer'
+         if (!payload.custom?.role) {
+            if (!payload.custom) payload.custom = {};
+            payload.custom.role = 'viewer';
+         }
+         return payload as JWTClaims;
+      } else {
+         console.error('[Auth] Invalid JWT payload structure after decoding.');
+         return null;
+      }
+    } else {
+      console.warn('[Auth] JWT token verification failed.');
+      return null;
+    }
   } catch (error) {
-    console.error('[Auth] Token verification error:', error);
-    return false;
+    console.error('[Auth] JWT token verification error:', error);
+    return null;
   }
 }
 
@@ -100,7 +122,8 @@ export async function authenticateRequest(request: Request, env: Env): Promise<A
       });
     }
 
-    if (!verifyAuthToken(token)) {
+    const payload = await verifyAuthToken(token, env.JWT_SECRET);
+    if (!payload) {
       console.log('[Auth] Invalid or expired token for API');
       return new Response('Invalid or expired token', {
         status: 401,
@@ -115,12 +138,9 @@ export async function authenticateRequest(request: Request, env: Env): Promise<A
 
     console.log('[Auth] API Token valid');
     // Add basic claims to request (assuming admin for now)
+    console.log('[Auth] API Token valid, attaching payload to request.');
     const authenticatedRequest = request as AuthenticatedRequest;
-    authenticatedRequest.jwt = {
-      aud: [], email: 'admin@example.com', exp: 0, iat: 0, nbf: 0,
-      iss: 'pixel-router', type: 'admin', identity_nonce: '', sub: 'admin',
-      country: 'US', custom: { role: 'admin' }
-    };
+    authenticatedRequest.jwt = payload; // Attach the decoded payload
     return authenticatedRequest;
 
   }

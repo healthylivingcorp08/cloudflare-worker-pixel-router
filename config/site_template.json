@@ -1,0 +1,83 @@
+{
+  "siteId": "NEW_SITE_ID",
+  "scrubPercent": 0,
+  "payout_step": 1,
+  "pages": {
+    "presell": {
+      "pixels": [
+        {
+          "type": "everflow_click",
+          "config": {
+            "offer_id": "{KV:NEW_SITE_ID_presell_offer_id}",
+            "affiliate_id": "{URL:c1}",
+            "parameterMapping": {
+              "sub1": "{URL:sub1}",
+              "uid": "{URL:uid}",
+              "source_id": "{URL:source_id}",
+              "transaction_id": "{URL:_ef_transaction_id}"
+            }
+          }
+        }
+      ],
+      "apiEndpoints": []
+    },
+    "landing": {
+      "pixels": [
+        {
+          "type": "everflow_click",
+          "config": {
+            "offer_id": "{KV:NEW_SITE_ID_landing_offer_id}",
+            "affiliate_id": "{URL:c1}",
+            "parameterMapping": {
+              "sub1": "{URL:sub1}",
+              "uid": "{URL:uid}",
+              "source_id": "{URL:source_id}",
+              "transaction_id": "{URL:_ef_transaction_id}"
+            }
+          }
+        }
+      ],
+      "apiEndpoints": []
+    },
+    "checkout": {
+      "pixels": [
+        {
+          "type": "everflow_conversion",
+          "config": {
+            "offer_id": "{KV:NEW_SITE_ID_checkout_offer_id}"
+          }
+        }
+      ],
+      "apiEndpoints": [
+        {
+          "type": "stickyio_order",
+          "endpoint": "{KV:stickyio_api_endpoint}",
+          "method": "POST",
+          "config": {
+            "campaign_id": "{KV:NEW_SITE_ID_checkout_campaign_id}",
+            "product_id": "{KV:NEW_SITE_ID_checkout_product_id}",
+            "api_key": "{SECRET:stickyio_api_key}"
+          }
+        }
+      ]
+    },
+    "confirmation": {
+      "pixels": [
+         {
+          "type": "everflow_conversion",
+          "config": {
+            "offer_id": "{KV:NEW_SITE_ID_checkout_offer_id}",
+            "event_id": "{KV:NEW_SITE_ID_confirmation_event_id}",
+            "amount": "{CONTEXT:orderTotal}"
+          }
+        }
+      ],
+      "apiEndpoints": []
+    }
+  },
+  "metadata": {
+    "lastModified": "{TIMESTAMP}",
+    "modifiedBy": "system",
+    "version": 1
+  }
+}

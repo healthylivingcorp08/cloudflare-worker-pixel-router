@@ -7,16 +7,26 @@ bucket = "./src/admin/ui"
 # KV Namespace for pixel configuration
 [[kv_namespaces]]
 binding = "PIXEL_CONFIG"
-id = "d6db5d0cfcb14e98b2d7f1bd5567f74f"
+id = "de87977f940b497b85e952b8fee620b3" # Updated PIXEL_CONFIG ID
+
+# KV Namespace for pixel state
+[[kv_namespaces]]
+binding = "PIXEL_STATE"
+id = "0d279ec802c34455863cbd272e55d5d7"
 
 # Development environment
 [env.dev]
-vars = { ENVIRONMENT = "dev" }
+[env.dev.vars]
+ENVIRONMENT = "dev"
+ENCRYPTION_SECRET = "123" # !!! REPLACE THIS WITH A REAL SECRET !!!
 
 [[env.dev.kv_namespaces]]
 binding = "PIXEL_CONFIG"
-id = "d6db5d0cfcb14e98b2d7f1bd5567f74f"
-preview = true
+preview_id = "" # Explicitly enable local simulation
+
+[[env.dev.kv_namespaces]]
+binding = "PIXEL_STATE"
+# id = "..." # Omit ID for local simulation
 
 # Production environment
 [env.production]
@@ -24,7 +34,11 @@ vars = { ENVIRONMENT = "production" }
 
 [[env.production.kv_namespaces]]
 binding = "PIXEL_CONFIG"
-id = "d6db5d0cfcb14e98b2d7f1bd5567f74f"
+id = "de87977f940b497b85e952b8fee620b3" # Updated PIXEL_CONFIG ID
+
+[[env.production.kv_namespaces]]
+binding = "PIXEL_STATE"
+id = "0d279ec802c34455863cbd272e55d5d7"
 
 [vars]
 # Default values for testing (overridden in production)
