@@ -27,8 +27,8 @@
     "tailwind-merge": "^3.2.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250425.0",
     "@cloudflare/next-on-pages": "^1.13.12",
+    "@cloudflare/workers-types": "^4.20250425.0",
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
@@ -38,7 +38,8 @@
     "eslint-config-next": "15.3.1",
     "tailwindcss": "^4",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5"
+    "typescript": "^5",
+    "typescript-eslint": "^8.31.0"
   },
   "engines": {
     "node": "=20.0.0"
