@@ -2,59 +2,91 @@ import { Env } from '../types'; // Assuming types are in ../types
 
 /**
  * Generic helper function to call Sticky.io API endpoints.
- * Handles authentication, request construction, and basic response parsing.
+ * Handles authentication, request construction, basic response parsing, and timeout.
  */
-async function callStickyApi(endpoint: string, payload: any, env: Env, method: string = 'POST'): Promise<any> {
+async function callStickyApi(endpoint: string, payload: any, env: Env, method: string = 'POST', timeoutMs: number = 10000): Promise<any> { // Added timeout parameter
     const stickyBaseUrl = "https://techcommerceunlimited.sticky.io/api/v1"; // Hardcoded API URL
     const stickyApiUser = env.STICKY_USERNAME;
     const stickyApiPass = env.STICKY_PASSWORD;
 
-    // Check only for username and password now, as URL is hardcoded
     if (!stickyApiUser || !stickyApiPass) {
         console.error('[StickyLib] Sticky.io credentials missing in environment secrets.');
-        throw new Error('Sticky.io API credentials missing'); // Updated error message
+        throw new Error('Sticky.io API credentials missing');
     }
 
-    // Ensure the base URL doesn't end with a slash and the endpoint doesn't start with one
     const cleanBaseUrl = stickyBaseUrl.endsWith('/') ? stickyBaseUrl.slice(0, -1) : stickyBaseUrl;
     const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
-    // Construct full URL by joining base and specific endpoint
     const stickyUrl = `${cleanBaseUrl}/${cleanEndpoint}`;
-   
-    console.log(`[StickyLib] Calling Sticky.io ${method}: ${stickyUrl}`);
-    // Avoid logging sensitive payload details in production environments
-    // console.log(`[StickyLib] Payload: ${JSON.stringify(payload)}`);
 
-    const response = await fetch(stickyUrl, {
-        method: method,
-        headers: {
-            'Authorization': 'Basic ' + btoa(`${stickyApiUser}:${stickyApiPass}`),
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-        },
-        body: JSON.stringify(payload)
-    });
+    console.log(`[StickyLib] Calling Sticky.io ${method}: ${stickyUrl} with timeout ${timeoutMs}ms`);
 
-    const responseBodyText = await response.text();
-    console.log(`[StickyLib] Response Status from ${endpoint}:`, response.status);
-    // Avoid logging full body in production if it might contain sensitive info returned on error
-    // console.log(`[StickyLib] Response Body Text:`, responseBodyText);
+    // --- Timeout Logic ---
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+        console.warn(`[StickyLib] Aborting fetch to ${endpoint} due to timeout (${timeoutMs}ms)`);
+        controller.abort();
+    }, timeoutMs);
+    // --- End Timeout Logic ---
+
+    let response: Response | null = null;
+    let responseBodyText: string = '';
 
     try {
-        const responseJson = JSON.parse(responseBodyText);
-        // Add status and ok flags for easier checking in handlers
-        responseJson._status = response.status;
-        responseJson._ok = response.ok;
-        return responseJson;
-    } catch (e) {
-        console.error(`[StickyLib] Failed to parse Sticky.io response JSON from ${endpoint}:`, responseBodyText);
-        // Return a structured error object consistent with the original function
-        return {
-            _status: response.status,
-            _ok: response.ok,
-            _rawBody: responseBodyText,
-            error_message: `Failed to parse response: ${responseBodyText.substring(0, 100)}...` // Truncate
-        };
+        response = await fetch(stickyUrl, {
+            method: method,
+            headers: {
+                'Authorization': 'Basic ' + btoa(`${stickyApiUser}:${stickyApiPass}`),
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal // Pass the abort signal
+        });
+
+        // Clear timeout if fetch completes
+        clearTimeout(timeoutId);
+
+        responseBodyText = await response.text();
+        console.log(`[StickyLib] Response Status from ${endpoint}:`, response.status);
+
+        try {
+            const responseJson = JSON.parse(responseBodyText);
+            responseJson._status = response.status;
+            responseJson._ok = response.ok;
+            return responseJson;
+        } catch (parseError) {
+            console.error(`[StickyLib] Failed to parse Sticky.io response JSON from ${endpoint}:`, responseBodyText, parseError);
+            return {
+                _status: response.status,
+                _ok: response.ok,
+                _rawBody: responseBodyText,
+                error_message: `Failed to parse response: ${responseBodyText.substring(0, 100)}...`
+            };
+        }
+
+    } catch (error: any) {
+        // Clear timeout if fetch fails for other reasons
+        clearTimeout(timeoutId);
+
+        if (error.name === 'AbortError') {
+            console.error(`[StickyLib] Fetch to ${endpoint} timed out after ${timeoutMs}ms.`);
+            // Return a specific error structure for timeouts
+            return {
+                _status: 408, // Request Timeout
+                _ok: false,
+                _rawBody: `Request timed out after ${timeoutMs}ms`,
+                error_message: `Request timed out after ${timeoutMs}ms`
+            };
+        } else {
+            console.error(`[StickyLib] Fetch error calling ${endpoint}:`, error);
+            // Return a generic error structure for other fetch errors
+             return {
+                _status: 500, // Or appropriate status based on error? Maybe 502 Bad Gateway?
+                _ok: false,
+                _rawBody: `Fetch error: ${error.message}`,
+                error_message: `Fetch error: ${error.message}`
+            };
+        }
     }
 }
 
@@ -74,9 +106,9 @@ export async function callStickyUpsell(payload: any, env: Env): Promise<any> {
 
 /**
  * Calls the Sticky.io 'order_view' endpoint.
- * @param orderIds Array of order IDs to view.
  */
 export async function callStickyOrderView(orderIds: string[], env: Env): Promise<any> {
     const payload = { order_id: orderIds };
+    // Using default 10-second timeout for order_view
     return callStickyApi('order_view', payload, env, 'POST');
 }
