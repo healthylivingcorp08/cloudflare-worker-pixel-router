@@ -11,7 +11,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
+// Removed unused Button import
 import { toast } from 'sonner'; // Import toast from sonner
 import { authFetch } from '@/lib/api'; // Import authFetch directly
 
@@ -47,9 +47,18 @@ export function DeleteSiteDialog({ open, onOpenChange, siteId, onSuccess }: Dele
             toast.success(`Site "${siteId}" and all its KV data have been deleted.`); // Use sonner's success method
             onSuccess(); // Trigger refresh / UI update
             onOpenChange(false); // Close dialog
-        } catch (error: any) {
+        } catch (error: unknown) { // Changed type from any to unknown
             console.error(`[DeleteSiteDialog] Error deleting site ${siteId}:`, error);
-            const errorMessage = error.response?.data?.error || error.message || 'Failed to delete site.';
+            let errorMessage = 'Failed to delete site.';
+            if (error instanceof Error) { // Check if it's an Error instance
+                // Attempt to access specific properties if needed, or just use message
+                // Example: Check for a specific structure if your API returns errors consistently
+                // if (typeof error === 'object' && error !== null && 'response' in error && ...) { ... }
+                errorMessage = error.message;
+            }
+            // Note: Accessing error.response?.data?.error is unsafe with 'unknown'.
+            // You'd need more robust type guards if you expect a specific error structure from authFetch.
+            // For now, relying on error.message is safer.
             toast.error(errorMessage); // Use sonner's error method
         } finally {
             setIsDeleting(false);

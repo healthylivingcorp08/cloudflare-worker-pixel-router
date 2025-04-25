@@ -16,18 +16,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogClose, // Import DialogClose
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+// Removed unused Dialog imports: Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose
+// Removed unused Label and Textarea imports
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,7 +47,7 @@ export default function KVTable({
     selectedSiteId,
     filterText,
     statusFilter, // Destructure status filter
-    refreshCounter, // Use refresh counter
+    // refreshCounter removed - not used internally
     onEditSuccess, // Use success callback
     onDeleteSuccess, // Use success callback
     onSelectionChange
@@ -74,7 +64,7 @@ export default function KVTable({
   // Remove editedValue, isSaving, saveError - handled by EditKVDialog
 
   // State for Delete Dialog
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false); // Although we use AlertDialogTrigger, manual control can be useful
+  // Removed unused isDeleteDialogOpen and setIsDeleteDialogOpen state
   const [deletingItemKey, setDeletingItemKey] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -82,6 +72,11 @@ export default function KVTable({
 
   // State for Add Dialog
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+
+  // Type guard to check if an object has a 'data' property
+  function isDataObject(obj: unknown): obj is { data: unknown } {
+    return typeof obj === 'object' && obj !== null && 'data' in obj;
+  }
 
   const fetchKVData = useCallback(async () => {
     console.log('[KVTable] fetchKVData triggered. Site:', selectedSiteId, 'Search:', filterText, 'Status:', statusFilter); // <-- Log start with search and status
@@ -120,15 +115,18 @@ export default function KVTable({
       let items = [];
       if (Array.isArray(response)) {
         items = response;
-      } else if (response && typeof response === 'object' && response.data) {
+      } else if (isDataObject(response)) { // Use type guard here
         items = Array.isArray(response.data) ? response.data : [response.data];
       } else {
         console.error('[KVTable] Invalid response format:', response);
         throw new Error('Invalid response format when fetching KV data. Expected array or {data: array}');
       }
 
-      const data: KVPair[] = items.map((item: any) => ({
-        key: item.name || item.key, // Support both 'name' and 'key' fields
+      // Define a type for the expected item structure from the API
+      type ApiItem = { name?: string; key?: string; value: unknown };
+
+      const data: KVPair[] = items.map((item: ApiItem) => ({
+        key: item.name || item.key || 'unknown_key', // Provide a fallback for key
         value: item.value,
       }));
       console.log('[KVTable] Setting KV data:', data); // <-- Log data being set
@@ -210,7 +208,8 @@ export default function KVTable({
       mounted = false;
       abortController.abort();
     };
-  }, [selectedSiteId, filterText, statusFilter]); // Removed refreshCounter from dependencies
+  // Added fetchKVData and isLoading to dependency array
+  }, [selectedSiteId, filterText, statusFilter, fetchKVData, isLoading]);
 
   // Client-side filtering removed - backend handles it now
 

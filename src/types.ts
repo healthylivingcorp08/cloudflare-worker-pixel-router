@@ -242,6 +242,11 @@ export interface PixelConfig {
 }
 
 
+// Simple Key-Value Pair structure used in Admin UI
+export interface KVPair {
+    key: string;
+    value: unknown; // Use unknown for flexibility, components can refine if needed
+}
 // --- Admin API Types ---
 export interface KvListResponse {
     keys: { name: string; expiration?: number; metadata?: unknown }[];

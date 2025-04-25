@@ -41,9 +41,12 @@ export default function LoginPage() {
                     description: errMsg,
                 });
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Login error:", err);
-            const errorMessage = err.message || 'An unexpected error occurred.';
+            let errorMessage = 'An unexpected error occurred.';
+            if (err instanceof Error) {
+                errorMessage = err.message;
+            }
             setError(`Login failed: ${errorMessage}`);
             toast.error("Login Failed", { // Use sonner's error toast
                  description: errorMessage,

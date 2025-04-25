@@ -33,7 +33,25 @@ export default function EditKVDialog({ siteId, kvPair, open, onOpenChange, onSuc
   // Populate form when dialog opens or kvPair changes
   useEffect(() => {
     if (open && kvPair) {
-      setValue(kvPair.value);
+      // Convert unknown value to string for Textarea
+      let displayValue = '';
+      if (kvPair.value !== null && kvPair.value !== undefined) {
+        if (typeof kvPair.value === 'string') {
+          displayValue = kvPair.value;
+        } else if (typeof kvPair.value === 'object') {
+          try {
+            // Pretty print JSON if it's an object/array
+            displayValue = JSON.stringify(kvPair.value, null, 2);
+          } catch {
+            // Fallback for non-JSON objects (e.g., Date)
+            displayValue = String(kvPair.value);
+          }
+        } else {
+          // Handle numbers, booleans, etc.
+          displayValue = String(kvPair.value);
+        }
+      }
+      setValue(displayValue);
       // No error state to reset
       setIsLoading(false);
     } else if (!open) {
@@ -60,19 +78,20 @@ export default function EditKVDialog({ siteId, kvPair, open, onOpenChange, onSuc
       // API endpoint: PUT /admin/api/kv/{key} - Key includes siteId prefix
       // Body: { value: '...' }
       // The key itself already contains the siteId prefix, so don't add it again in the path.
-      const response = await authFetch(`/admin/api/kv/${encodeURIComponent(kvPair.key)}`, {
+      await authFetch(`/admin/api/kv/${encodeURIComponent(kvPair.key)}`, { // Removed unused 'response' variable
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: value }),
       });
 
-      if (!response || !response.success) {
-        throw new Error(response?.error || 'Failed to update KV pair.');
-      }
+      // If authFetch didn't throw, the request was successful.
+      // No need to check response.success.
 
-      console.log('KV pair updated successfully:', response);
+      // console.log('KV pair updated successfully:', response); // 'response' is not available here
       toast.success('KV pair updated successfully!');
       // Call onSuccess with the key and the NEW value for optimistic update
+      // Note: The value saved might be different if the backend parses/modifies it (e.g., JSON string vs object)
+      // For optimistic update, we use the value from the input state.
       onSuccess({ key: kvPair.key, value: value });
       onOpenChange(false); // Close the dialog
     } catch (err) {

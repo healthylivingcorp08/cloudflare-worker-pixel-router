@@ -1,4 +1,4 @@
-import { useRouter } from 'next/navigation'; // Use next/navigation for App Router
+// Removed unused useRouter import
 
 // Define a type for the expected error structure from the API
 interface ApiError {
@@ -17,7 +17,7 @@ interface ApiError {
  * @returns A Promise resolving to the parsed JSON response or success status.
  * @throws An error if the fetch fails or the API returns an error status.
  */
-export async function authFetch<T = any>(url: string, options: RequestInit = {}): Promise<T> {
+export async function authFetch<T = unknown>(url: string, options: RequestInit = {}): Promise<T> { // Default generic to unknown
     // This function needs to be called from within a component or hook where useRouter is available
     // We'll wrap the core logic and call it from a hook or component context later if needed for router access.
     // For now, let's handle the core fetch logic. Direct router usage here is problematic server-side or outside components.
@@ -64,7 +64,7 @@ export async function authFetch<T = any>(url: string, options: RequestInit = {})
             let errorData: ApiError | null = null;
             try {
                 errorData = await response.json();
-            } catch (e) {
+            } catch { // Removed unused 'e' variable
                 // Ignore if response is not JSON
             }
             const errorMessage = errorData?.error || response.statusText || `HTTP error ${response.status}`;

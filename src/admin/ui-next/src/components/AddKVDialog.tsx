@@ -51,17 +51,16 @@ export default function AddKVDialog({ siteId, open, onOpenChange, onSuccess }: A
       // API endpoint: /admin/api/kv/{siteId}/{key}
       // Method: PUT
       // Body: { value: '...' }
-      const response = await authFetch(`/admin/api/kv/${siteId}/${encodeURIComponent(key.trim())}`, {
+      await authFetch(`/admin/api/kv/${siteId}/${encodeURIComponent(key.trim())}`, { // Removed unused 'response' variable
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: value }), // Send only the value in the body
       });
 
-      if (!response || !response.success) {
-        throw new Error(response?.error || 'Failed to add KV pair.');
-      }
+      // If authFetch didn't throw, the request was successful (response.ok was true).
+      // No need to check response.success as the PUT endpoint might return 204 No Content.
 
-      console.log('KV pair added successfully:', response);
+      // console.log('KV pair added successfully:', response); // 'response' might be null or unknown here
       toast.success('KV pair added successfully!'); // Use toast
       onSuccess(); // Refresh the KV table
       onOpenChange(false); // Close the dialog

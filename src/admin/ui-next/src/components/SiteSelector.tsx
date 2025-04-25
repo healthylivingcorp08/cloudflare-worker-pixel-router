@@ -32,8 +32,13 @@ export default function SiteSelector({ onSiteSelected, refreshCounter }: SiteSel
       setError(null);
       try {
         // API returns { success: boolean, data: string[] }, extract data
-        const response = await authFetch('/admin/api/config/sites');
-        if (!response || !response.success || !Array.isArray(response.data)) {
+        // Provide the expected type to authFetch
+        const response = await authFetch<{ success: boolean; data: string[] }>('/admin/api/config/sites');
+
+        // authFetch throws on non-ok status. If it returns, check the structure.
+        // Note: authFetch might return null for non-JSON success (e.g., 204), handle that.
+        if (!response || typeof response !== 'object' || !response.success || !Array.isArray(response.data)) {
+          console.error("Invalid response format received:", response);
           throw new Error('Invalid response format from API');
         }
         const siteIds: string[] = response.data;

@@ -47,33 +47,26 @@ export default function DeleteKVDialog({
         try {
             // API endpoint: DELETE /admin/api/kv/bulk-delete
             // Body: { keys: ["key1", "key2", ...] }
-            const response = await authFetch(`/admin/api/kv/bulk-delete`, { // Use bulk-delete endpoint
+            await authFetch(`/admin/api/kv/bulk-delete`, { // Removed unused 'response' variable
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ keys: Array.from(keysToDelete) }), // Convert Set to Array
             });
 
-            // Check if the response indicates success (status 200-299)
-            if (!response.ok) {
-                // Try to parse error message from response body
-                let errorData;
-                try {
-                    errorData = await response.json();
-                } catch (parseError) {
-                    // If parsing fails, use a generic error message based on status
-                    errorData = { message: `HTTP error! Status: ${response.status}` };
-                }
-                throw new Error(errorData?.message || `Failed to delete KV pairs. Status: ${response.status}`);
-            }
+            // If authFetch didn't throw, the request was successful (response.ok was true).
+            // The check for !response.ok is handled internally by authFetch.
 
             // Deletion successful
             toast.success(`Successfully deleted ${keysToDelete.size} KV pair(s).`);
             onSuccess(); // Trigger refresh in parent component
             onOpenChange(false); // Close the dialog
 
-        } catch (err: any) {
+        } catch (err: unknown) { // Changed type from any to unknown
             console.error("Error deleting KV pairs:", err);
-            const errorMessage = err.message || "An unexpected error occurred while deleting KV pairs.";
+            let errorMessage = "An unexpected error occurred while deleting KV pairs.";
+            if (err instanceof Error) { // Check if it's an Error instance
+                errorMessage = err.message;
+            }
             toast.error("Failed to delete KV pairs", { description: errorMessage });
         } finally {
             setIsLoading(false);
