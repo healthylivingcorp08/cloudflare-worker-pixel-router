@@ -20,11 +20,11 @@
     ],
     "baseUrl": ".", // Needed for paths mapping
     "paths": {
-      "@/*": ["./src/*"],
-      "@cloudflare/workers-types": ["../../node_modules/@cloudflare/workers-types"] // Explicit path mapping
-    },
-    "typeRoots": ["./node_modules/@types", "../../node_modules/@types"]
+      "@/*": ["./src/*"]
+      // Removed path mapping for @cloudflare/workers-types
+    }
+    // Removed typeRoots
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "../../types.ts"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"], // Removed ../../types.ts
   "exclude": ["node_modules"]
 }
