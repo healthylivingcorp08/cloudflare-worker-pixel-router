@@ -4,3 +4,4 @@ dist/
 .dev.vars
 .wrangler/
 .DS_Store
+src/admin/ui-next/next-env.d.ts
