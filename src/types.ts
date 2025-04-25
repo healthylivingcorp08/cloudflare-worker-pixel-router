@@ -1,4 +1,11 @@
-import type { KVNamespace } from '@cloudflare/workers-types';
+// Temporarily commented out for Cloudflare Pages build
+// import type { KVNamespace } from '@cloudflare/workers-types';
+interface KVNamespace {
+  get(key: string): Promise<string|null>;
+  put(key: string, value: string): Promise<void>;
+  delete(key: string): Promise<void>;
+  list(): Promise<{keys: {name: string}[]}>;
+}
 
 // Environment variables expected by the Worker
 export interface Env {
