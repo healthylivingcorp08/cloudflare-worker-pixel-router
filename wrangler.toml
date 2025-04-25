@@ -29,3 +29,10 @@ id = "d6db5d0cfcb14e98b2d7f1bd5567f74f"
 [vars]
 # Default values for testing (overridden in production)
 STICKYIO_API_KEY = "test_key"
+
+# wrangler.toml (wrangler v3.88.0^)
+[observability.logs]
+enabled = true
+
+
+
