@@ -41,6 +41,7 @@ export async function routeRequest(request: Request, env: Env, ctx: ExecutionCon
             '/api/upsell',
             '/api/page-pixels',
             '/api/order-details',
+            '/api/order-confirmation',
             '/api/decide-campaign',
             '/checkout/paypal-return' // Added PayPal return path for CORS
         ];
@@ -85,7 +86,7 @@ export async function routeRequest(request: Request, env: Env, ctx: ExecutionCon
             console.log(`[Router] Routing to Decide Campaign Handler`);
             return await handleDecideCampaign(request, env, ctx);
         }
-        else if (pathname === '/api/order-details' && method === 'POST') {
+        else if ((pathname === '/api/order-details' || pathname === '/api/order-confirmation') && method === 'POST') {
             console.log(`[Router] Routing to Order Details Handler`);
             return await handleOrderDetails(request, env, ctx);
         }

@@ -108,7 +108,11 @@ export async function callStickyUpsell(payload: any, env: Env): Promise<any> {
  * Calls the Sticky.io 'order_view' endpoint.
  */
 export async function callStickyOrderView(orderIds: string[], env: Env): Promise<any> {
+    console.log('[StickyLib] Preparing order_view request for order IDs:', orderIds);
     const payload = { order_id: orderIds };
+    console.log('[StickyLib] order_view payload:', JSON.stringify(payload));
     // Using default 10-second timeout for order_view
-    return callStickyApi('order_view', payload, env, 'POST');
+    const result = await callStickyApi('order_view', payload, env, 'POST');
+    console.log('[StickyLib] order_view result:', JSON.stringify(result));
+    return result;
 }
