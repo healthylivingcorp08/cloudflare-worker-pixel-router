@@ -57,10 +57,45 @@
         button:hover {
             background: #0056b3;
         }
-        .loading {
-            display: none;
-            text-align: center;
+        .loading { display: none; text-align: center; padding: 20px; }
+        .kv-controls { margin-bottom: 15px; display: flex; gap: 10px; align-items: center; }
+        .kv-controls input[type="text"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; flex-grow: 1; }
+        .value-cell pre { margin: 0; white-space: pre-wrap; word-break: break-all; max-height: 150px; overflow-y: auto; }
+        .delete-button { background-color: #dc3545; }
+        .delete-button:hover { background-color: #c82333; }
+
+        /* Modal Styles */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed; /* Stay in place */
+            z-index: 1; /* Sit on top */
+            left: 0;
+            top: 0;
+            width: 100%; /* Full width */
+            height: 100%; /* Full height */
+            overflow: auto; /* Enable scroll if needed */
+            background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 10% auto; /* 10% from the top and centered */
             padding: 20px;
+            border: 1px solid #888;
+            width: 60%; /* Could be more or less, depending on screen size */
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -76,12 +111,96 @@
 
     <div class="card">
         <h2>KV Values</h2>
+        <div class="kv-controls">
+            <input type="text" id="kvSearchInput" placeholder="Search keys or values...">
+            <button onclick="addNewKV()">Add New KV Pair</button>
+            <button id="deleteSelectedButton" class="delete-button" onclick="deleteSelectedKV()" disabled>Delete Selected</button>
+        </div>
         <div id="kvValues"></div>
     </div>
 
     <div class="loading" id="loading">Loading...</div>
 
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" onclick="closeModal()">&times;</span>
+            <h2>Edit KV Pair</h2>
+            <p>Key: <strong id="modalKey"></strong></p>
+            <textarea id="modalValueTextarea" rows="10" style="width: 95%; font-family: monospace;"></textarea>
+            <button onclick="saveModalValue()">Save Changes</button>
+            <button onclick="closeModal()" style="background-color: #6c757d; margin-left: 10px;">Cancel</button>
+            <div id="modalError" style="color: red; margin-top: 10px;"></div>
+        </div>
+    </div>
+
     <script>
+        // --- Modal Globals ---
+        const modal = document.getElementById('editModal');
+        const modalKeyElement = document.getElementById('modalKey');
+        const modalValueTextarea = document.getElementById('modalValueTextarea');
+        const modalErrorElement = document.getElementById('modalError');
+        let currentEditingKey = null; // Store the key being edited
+
+        // --- Modal Functions ---
+        function openModal(key, currentValue) {
+            currentEditingKey = key;
+            modalKeyElement.textContent = key;
+            modalValueTextarea.value = currentValue; // Set textarea value
+            modalErrorElement.textContent = ''; // Clear previous errors
+            modal.style.display = 'block'; // Show the modal
+        }
+
+        function closeModal() {
+            modal.style.display = 'none'; // Hide the modal
+            currentEditingKey = null; // Clear the key being edited
+        }
+
+        async function saveModalValue() {
+            if (!currentEditingKey) return; // Should not happen, but safety check
+
+            const newValue = modalValueTextarea.value;
+            modalErrorElement.textContent = ''; // Clear previous errors
+
+            // Basic validation: try parsing if it looks like JSON
+            let valueToSend = newValue;
+            let isLikelyJson = (newValue.trim().startsWith('{') && newValue.trim().endsWith('}')) || (newValue.trim().startsWith('[') && newValue.trim().endsWith(']'));
+
+            if (isLikelyJson) {
+                try {
+                    JSON.parse(newValue); // Validate JSON structure
+                    // If valid, we still send it as a string, as the backend expects a string
+                    valueToSend = newValue;
+                } catch (e) {
+                    modalErrorElement.textContent = 'Invalid JSON format. Please correct it or enter a plain string.';
+                    return; // Stop if invalid JSON
+                }
+            }
+            // If not likely JSON, send as is
+
+            try {
+                document.getElementById('loading').style.display = 'block'; // Show main loading indicator
+                const response = await fetch(`/admin/api/kv/${currentEditingKey}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: valueToSend }) // Send the potentially validated value
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert('Value updated successfully!');
+                    closeModal(); // Close modal on success
+                    location.reload(); // Reload to see changes
+                } else {
+                    modalErrorElement.textContent = 'Failed to update value: ' + (data.error || 'Unknown error');
+                }
+            } catch (error) {
+                 modalErrorElement.textContent = 'Error updating value: ' + error;
+            } finally {
+                 document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        // --- Core Data Fetching ---
         async function fetchSiteConfig() {
             const response = await fetch('/admin/api/config/siteA');
             const data = await response.json();
@@ -102,6 +221,7 @@
                 table.innerHTML = `
                     <thead>
                         <tr>
+                            <th><input type="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll(this.checked)"></th>
                             <th>Key</th>
                             <th>Value</th>
                             <th>Actions</th>
@@ -120,45 +240,186 @@
                     
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
+                        <td><input type="checkbox" class="row-checkbox" value="${key.name}" onclick="updateDeleteButtonState()"></td>
                         <td>${key.name}</td>
-                        <td class="value-cell">${valueData.data.value}</td>
+                        <td class="value-cell">${renderValue(valueData.data.value)}</td>
                         <td>
-                            <button onclick="editValue('${key.name}')">Edit</button>
+                            <button onclick="editValue('${key.name}', \`${valueData.data.value}\`)">Edit</button>
                         </td>
                     `;
                     tbody.appendChild(tr);
                 }
+
+                // Add search listener after table is populated
+                document.getElementById('kvSearchInput').addEventListener('input', filterTable);
             }
         }
 
-        async function editValue(key) {
-            const newValue = prompt('Enter new value:');
-            if (newValue !== null) {
-                try {
-                    const response = await fetch(`/admin/api/kv/${key}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ value: newValue })
-                    });
-                    const data = await response.json();
-                    if (data.success) {
-                        alert('Value updated successfully!');
-                        location.reload();
+        function renderValue(value) {
+            try {
+                const parsed = JSON.parse(value);
+                // It's JSON, format it
+                return `<pre>${JSON.stringify(parsed, null, 2)}</pre>`;
+            } catch (e) {
+                // Not JSON, return as is (or maybe escape HTML later if needed)
+                return value;
+            }
+        }
+
+        function filterTable() {
+            const searchTerm = document.getElementById('kvSearchInput').value.toLowerCase();
+            const rows = document.getElementById('kvTableBody').getElementsByTagName('tr');
+            for (let i = 0; i < rows.length; i++) {
+                const keyCell = rows[i].getElementsByTagName('td')[1]; // Key column
+                const valueCell = rows[i].getElementsByTagName('td')[2]; // Value column
+                if (keyCell && valueCell) {
+                    const keyText = keyCell.textContent || keyCell.innerText;
+                    const valueText = valueCell.textContent || valueCell.innerText;
+                    if (keyText.toLowerCase().includes(searchTerm) || valueText.toLowerCase().includes(searchTerm)) {
+                        rows[i].style.display = '';
                     } else {
-                        alert('Failed to update value: ' + data.error);
+                        rows[i].style.display = 'none';
                     }
-                } catch (error) {
-                    alert('Error updating value: ' + error);
                 }
             }
         }
 
-        // Load data when page loads
-        document.getElementById('loading').style.display = 'block';
-        Promise.all([fetchSiteConfig(), fetchKVValues()])
-            .finally(() => {
+        // Modified editValue to use the modal
+        async function editValue(key, currentValue) {
+            // Fetch the potentially large/complex value again directly before editing
+            // This ensures we have the latest, unescaped version for the textarea
+            try {
+                 document.getElementById('loading').style.display = 'block';
+                 const valueResponse = await fetch(`/admin/api/kv/${key}`);
+                 const valueData = await valueResponse.json();
+                 document.getElementById('loading').style.display = 'none';
+
+                 if (valueData.success) {
+                     // Open the modal with the fetched value
+                     openModal(key, valueData.data.value);
+                 } else {
+                     alert('Failed to fetch current value for editing: ' + (valueData.error || 'Unknown error'));
+                 }
+            } catch (error) {
+                 document.getElementById('loading').style.display = 'none';
+                 alert('Error fetching value for editing: ' + error);
+            }
+        }
+
+
+        async function addNewKV() {
+            const newKey = prompt('Enter the new KV key:');
+            if (!newKey) return;
+            const newValue = prompt(`Enter the initial value for key "${newKey}":`, '{}'); // Default to empty JSON object
+            if (newValue === null) return; // User cancelled value prompt
+
+             // Basic validation: if value looks like JSON, ensure it's valid
+             if ((newValue.startsWith('{') && newValue.endsWith('}')) || (newValue.startsWith('[') && newValue.endsWith(']'))) {
+                 try {
+                     JSON.parse(newValue);
+                 } catch (e) {
+                     alert('Invalid JSON format entered for the initial value. Please correct it.');
+                     return;
+                 }
+             }
+
+            try {
+                document.getElementById('loading').style.display = 'block';
+                // Backend endpoint should now be implemented
+                const response = await fetch(`/admin/api/kv`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: newKey, value: newValue })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert('KV pair added successfully!');
+                    location.reload();
+                } else {
+                    alert('Failed to add KV pair: ' + (data.error || 'Unknown error from backend'));
+                }
+            } catch (error) {
+                alert('Error adding KV pair: ' + error);
+            } finally {
+                 document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function toggleSelectAll(checked) {
+            const checkboxes = document.querySelectorAll('.row-checkbox');
+            checkboxes.forEach(cb => cb.checked = checked);
+            updateDeleteButtonState();
+        }
+
+        function updateDeleteButtonState() {
+            const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+            document.getElementById('deleteSelectedButton').disabled = checkboxes.length === 0;
+            // Uncheck "select all" if any row is manually unchecked
+            if (checkboxes.length < document.querySelectorAll('.row-checkbox').length) {
+                document.getElementById('selectAllCheckbox').checked = false;
+            } else if (checkboxes.length > 0 && checkboxes.length === document.querySelectorAll('.row-checkbox').length) {
+                 document.getElementById('selectAllCheckbox').checked = true;
+            }
+        }
+
+        async function deleteSelectedKV() {
+            const selectedCheckboxes = document.querySelectorAll('.row-checkbox:checked');
+            if (selectedCheckboxes.length === 0) {
+                alert('Please select at least one KV pair to delete.');
+                return;
+            }
+            const keysToDelete = Array.from(selectedCheckboxes).map(cb => cb.value);
+
+            if (!confirm(`Are you sure you want to delete the following ${keysToDelete.length} KV pair(s)?\n\n${keysToDelete.join('\n')}`)) {
+                return;
+            }
+
+            try {
+                document.getElementById('loading').style.display = 'block';
+                // Backend endpoint should now be implemented
+                const response = await fetch(`/admin/api/kv/bulk`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ keys: keysToDelete })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert(`${data.deletedCount || 'Selected'} KV pair(s) deleted successfully!`);
+                    location.reload();
+                } else {
+                     alert(`Failed to delete KV pairs: ${data.error || 'Unknown error'}\nSuccessful deletes: ${data.deletedCount || 0}`);
+                     if (data.deletedCount > 0) location.reload(); // Reload even if partial success
+                }
+            } catch (error) {
+                alert('Error deleting KV pairs: ' + error);
+            } finally {
                 document.getElementById('loading').style.display = 'none';
-            });
+            }
+        }
+
+
+        // --- Initial Load ---
+        function loadAdminData() {
+            document.getElementById('loading').style.display = 'block';
+            // Clear existing content before loading
+            document.getElementById('siteConfig').innerHTML = '';
+            document.getElementById('kvValues').innerHTML = '';
+            document.getElementById('kvSearchInput').value = ''; // Clear search
+
+            Promise.all([fetchSiteConfig(), fetchKVValues()])
+                .catch(error => {
+                    console.error("Error loading admin data:", error);
+                    alert("Failed to load admin data. Check console for details.");
+                })
+                .finally(() => {
+                    document.getElementById('loading').style.display = 'none';
+                    updateDeleteButtonState(); // Ensure delete button state is correct on load
+                });
+        }
+
+        // Load data when page loads
+        loadAdminData();
+
     </script>
 </body>
 </html>

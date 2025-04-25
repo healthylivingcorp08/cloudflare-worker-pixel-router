@@ -10,18 +10,28 @@
     "init-config": "node scripts/init-config.js",
     "init-auth": "node scripts/init-auth.js",
     "setup": "npm run init-config && npm run init-auth",
-    "update-kv": "ts-node --transpile-only scripts/update-kv.ts",
-    "test": "vitest run",
+    "update-kv": "tsx scripts/update-kv.ts",
+    "sync-kv": "tsx scripts/sync-site-config.ts",
+    "test": "vitest run tests/unit",
     "build": "wrangler build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "kv:sync-configs": "ts-node --transpile-only scripts/sync-kv-configs.ts"
   },
   "dependencies": {
-    "@cloudflare/workers-types": "^4.0.0"
+    "@cloudflare/workers-types": "^4.0.0",
+    "@tsndr/cloudflare-worker-jwt": "^3.1.4",
+    "@types/lodash-es": "^4.17.12",
+    "lodash-es": "^4.17.21"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "miniflare": "^4.20250410.1",
+    "@cloudflare/vitest-pool-workers": "^0.8.18",
+    "@playwright/test": "^1.52.0",
+    "@types/axios": "^0.9.36",
+    "@types/node": "^20.17.30",
+    "axios": "^1.8.4",
+    "playwright": "^1.52.0",
     "ts-node": "^10.0.0",
+    "tsx": "^4.19.3",
     "typescript": "^5.0.0",
     "vitest": "^3.1.1",
     "wrangler": "^4.0.0"

@@ -1,0 +1,6 @@
+{
+  "type": "server-side",
+  "provider": "everflow_postback",
+  "url": "https://www.c6orlterk.com/?nid=1318&transaction_id=PARAM:CLICK_ID",
+  "method": "GET"
+}

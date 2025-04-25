@@ -31,9 +31,9 @@ function parseArgs(): KVUpdateOptions {
 
 function updateKV({ site, key, value }: KVUpdateOptions): void {
   try {
-    // The full key in KV will be prefixed with the site ID
-    const kvKey = `${site}_${key}`;
-    
+    // The full key in KV will be prefixed with the site ID, using a colon separator
+    const kvKey = `${site}:${key}`; // Changed underscore to colon
+
     // Use wrangler to put the value in KV
     const command = `wrangler kv:key put --binding=PIXEL_CONFIG "${kvKey}" "${value}"`;
     

@@ -8,6 +8,7 @@ echo "Populating local KV for drivebright..."
 
 # --- Simple Values ---
 npx wrangler kv key put drivebright_rule_scrubPercent "20" --binding PIXEL_CONFIG --local
+npx wrangler kv key put drivebright_upsell2_normal_campaign_id "169" --binding PIXEL_CONFIG --local
 
 # --- JSON Values (from files) ---
 # Ensure the corresponding .json files exist in ./scripts/kv-data/
@@ -20,7 +21,7 @@ npx wrangler kv key put drivebright_rule_pageRules --path "${KV_DATA_DIR}/driveb
 # Action Definitions
 npx wrangler kv key put drivebright_action_efClick --path "${KV_DATA_DIR}/drivebright_action_efClick.json" --binding PIXEL_CONFIG --local
 npx wrangler kv key put drivebright_action_efConversion --path "${KV_DATA_DIR}/drivebright_action_efConversion.json" --binding PIXEL_CONFIG --local
-# npx wrangler kv key put drivebright_action_fbPurchase --path "${KV_DATA_DIR}/drivebright_action_fbPurchase.json" --binding PIXEL_CONFIG --local
+npx wrangler kv key put drivebright_action_fbPurchase --path "${KV_DATA_DIR}/drivebright_action_fbPurchase.json" --binding PIXEL_CONFIG --local
 npx wrangler kv key put drivebright_action_scrubPixel --path "${KV_DATA_DIR}/drivebright_action_scrubPixel.json" --binding PIXEL_CONFIG --local
 
 # Rule Actions

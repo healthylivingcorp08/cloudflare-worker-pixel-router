@@ -1,0 +1,5 @@
+{
+  "type": "client-side",
+  "provider": "everflow",
+  "script_template": "<script type=\"text/javascript\">EF.conversion({ offer_id: 769 });</script>"
+}
