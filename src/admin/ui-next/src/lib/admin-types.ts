@@ -28,12 +28,12 @@ export interface KvWriteRequest {
     key: string;
     value: string; // Assuming value is stringified JSON for the API
     expirationTtl?: number; // Optional TTL in seconds
-    metadata?: any; // Optional metadata
+    metadata?: unknown; // Optional metadata
 }
 
 export interface KvReadResponse {
     value: string | null; // Assuming value is stringified JSON from the API
-    metadata?: any;
+    metadata?: unknown;
 }
 
 export interface KvDeleteRequest {
