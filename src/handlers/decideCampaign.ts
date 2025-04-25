@@ -73,6 +73,8 @@ export async function handleDecideCampaign(request: Request, env: Env, ctx: Exec
     console.log(`[DecideCampaignHandler] Scrub Decision: isScrub = ${isScrub} (Threshold: ${applicableScrubPercent}%)`);
 
     // 4. Determine targetCampaignId
+    console.log(`[DecideCampaignHandler] DEBUG: Raw KV value for ${normalCampaignIdKey}:`, normalCampaignIdValue); // Log raw KV value
+    console.log(`[DecideCampaignHandler] DEBUG: Raw KV value for ${scrubCampaignIdKey}:`, scrubCampaignIdValue);   // Log raw KV value
     const normalCampaignId = normalCampaignIdValue || 'default_normal_campaign'; // Provide sensible defaults
     const scrubCampaignId = scrubCampaignIdValue || 'default_scrub_campaign';
     const targetCampaignId = isScrub ? scrubCampaignId : normalCampaignId;
