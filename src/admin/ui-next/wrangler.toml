@@ -1,0 +1,8 @@
+# wrangler.toml
+# Ensure 'name' matches your Cloudflare Pages project name if it's different from 'drivebright'
+name = "drivebright" 
+compatibility_date = "2024-04-24" # Using a recent date, adjust if needed
+
+# Compatibility flags and output directory are typically handled by @cloudflare/next-on-pages
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vercel/output/static"
