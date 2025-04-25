@@ -18,9 +18,12 @@
         "name": "next"
       }
     ],
+    "baseUrl": ".", // Needed for paths mapping
     "paths": {
-      "@/*": ["./src/*"]
-    }
+      "@/*": ["./src/*"],
+      "@cloudflare/workers-types": ["../../node_modules/@cloudflare/workers-types"] // Explicit path mapping
+    },
+    "typeRoots": ["./node_modules/@types", "../../node_modules/@types"]
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "../../types.ts"],
   "exclude": ["node_modules"]
