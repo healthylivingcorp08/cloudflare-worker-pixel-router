@@ -1,7 +1,6 @@
 import { Env } from './types';
 import { ExecutionContext } from '@cloudflare/workers-types';
 import { handleOptions, addCorsHeaders } from './middleware/cors'; // Import CORS handlers
-import { handleAdminRequest } from './admin/router'; // Import the admin router
 
 // Import API Handlers
 import { handleCheckout } from './handlers/checkout';
@@ -52,16 +51,6 @@ export async function routeRequest(request: Request, env: Env, ctx: ExecutionCon
 
         // --- Handle Admin Routes ---
         // Delegate /, /admin, and /login paths to the admin router/proxy
-        if (pathname === '/' || pathname.startsWith('/admin') || pathname.startsWith('/login')) {
-             // Only delegate GET for the root path, POST / is the checkout endpoint
-            if (pathname === '/' && method !== 'GET') {
-                 // Let it fall through to API routes if it's not GET /
-            } else {
-                console.log(`[Router] Delegating to Admin Router for ${pathname}`);
-                return await handleAdminRequest(request, env);
-            }
-        }
-
         // --- Proxy Next.js Dev Server Assets ---
         // In local dev (wrangler dev), proxy requests for /_next/ to the Next.js dev server
         // TODO: Determine if NEXT_PUBLIC_APP_URL is reliable or if we should hardcode localhost:3000 for dev proxy
