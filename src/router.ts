@@ -17,7 +17,9 @@ import {
   handleCreateSiteFromTemplate,
   handleUpdateValue, // Import KV update handler
   handleCreateValue, // Import KV create handler
-  handleDeleteValue  // Import KV delete handler
+  handleDeleteValue, // Import KV delete handler
+  handleDeleteSite,  // Import Site delete handler
+  handleBulkDelete   // Import KV bulk delete handler
 } from './admin/api/kv'; // Import KV handlers
 
 /**
@@ -173,6 +175,21 @@ export async function routeRequest(request: Request, env: Env, ctx: ExecutionCon
                 }
                 console.log(`[Router] Routing to Admin Delete KV Value Handler for key: ${key}`);
                 return await handleDeleteValue(authenticatedRequest, env, key);
+            }
+            // Route for deleting an entire site (all associated KV keys)
+            else if (pathname.startsWith('/admin/api/sites/') && method === 'DELETE') {
+                // Extract the siteId from the path: /admin/api/sites/{siteId}
+                const siteId = decodeURIComponent(pathname.substring('/admin/api/sites/'.length));
+                if (!siteId) {
+                    return addCorsHeaders(new Response(JSON.stringify({ success: false, error: 'Missing siteId in path.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
+                }
+                console.log(`[Router] Routing to Admin Delete Site Handler for siteId: ${siteId}`);
+                return await handleDeleteSite(authenticatedRequest, env, siteId);
+            }
+            // Route for bulk deleting KV values
+            else if (pathname === '/admin/api/kv/bulk-delete' && method === 'DELETE') {
+                console.log(`[Router] Routing to Admin Bulk Delete KV Handler`);
+                return await handleBulkDelete(authenticatedRequest, env);
             }
             // Add other protected admin routes here...
             // else if (pathname === '/admin/api/some-other-route' && method === 'POST') {
