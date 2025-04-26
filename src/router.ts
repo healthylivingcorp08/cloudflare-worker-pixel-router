@@ -11,7 +11,8 @@ import { handleOrderDetails } from './handlers/orderDetails';
 import { handleDecideCampaign } from './handlers/decideCampaign';
 import { handlePaypalReturn } from './handlers/paypalReturn'; // Added PayPal return handler
 import { handleAdminLogin } from './handlers/adminAuth'; // Added Admin Login handler
-import { handleListSites } from './admin/api/config'; // Added Admin Config handler
+import { handleListSites } from './admin/api/config'; // Site listing handler
+import { handleListKeys as handleListKvKeys, handleCreateSiteFromTemplate } from './admin/api/kv'; // Import KV list and site creation handlers
 
 /**
  * Main request router for the Cloudflare Worker.
@@ -129,6 +130,17 @@ export async function routeRequest(request: Request, env: Env, ctx: ExecutionCon
             else if (pathname === '/admin/api/config/sites' && method === 'GET') {
                 console.log(`[Router] Routing to Admin List Sites Handler`);
                 return await handleListSites(authenticatedRequest, env); // Pass the authenticated request
+            }
+            else if (pathname === '/admin/api/kv-keys' && method === 'GET') {
+                console.log(`[Router] Routing to Admin List KV Keys Handler`);
+                return await handleListKvKeys(authenticatedRequest, env); // Pass the authenticated request
+            }
+            // NOTE: Changed endpoint from /admin/api/config/sites to /admin/api/kv/sites for clarity
+            else if (pathname === '/admin/api/kv/sites' && method === 'POST') { // Route for creating a site using KV template
+                console.log(`[Router] Routing to Admin Create Site From KV Template Handler`);
+                // handleCreateSiteFromTemplate expects { siteId: "..." } in the body
+                // No siteId path parameter needed here.
+                return await handleCreateSiteFromTemplate(authenticatedRequest, env);
             }
             // Add other protected admin routes here...
             // else if (pathname === '/admin/api/some-other-route' && method === 'POST') {
