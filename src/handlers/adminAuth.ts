@@ -1,19 +1,23 @@
 import { Env } from '../types';
 import { ExecutionContext } from '@cloudflare/workers-types';
 import { addCorsHeaders } from '../middleware/cors'; // Assuming CORS middleware exists
+import { sign } from '@tsndr/cloudflare-worker-jwt'; // Import the sign function
 
-// Placeholder for JWT generation - replace with actual implementation
+/**
+ * Generates a JWT token using HS256 algorithm.
+ */
 async function generateJwtToken(username: string, secret: string): Promise<string> {
-    // In a real app, use a library like 'jose' or '@tsndr/cloudflare-worker-jwt'
-    // This is a highly insecure placeholder:
-    console.warn("Using insecure placeholder JWT generation!");
-    const header = { alg: 'HS256', typ: 'JWT' };
-    const payload = { sub: username, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24) }; // Expires in 24 hours
-    const encodedHeader = btoa(JSON.stringify(header)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-    const encodedPayload = btoa(JSON.stringify(payload)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-    // Simple signing (NOT SECURE for production)
-    const signature = btoa(`${encodedHeader}.${encodedPayload}.${secret}`).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_'); // Replace with actual HMAC-SHA256
-    return `${encodedHeader}.${encodedPayload}.${signature}`;
+    console.log('[Auth] Generating JWT token...');
+    const payload = {
+        sub: username, // Subject (standard claim)
+        iat: Math.floor(Date.now() / 1000), // Issued At (standard claim)
+        exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24), // Expiration Time: 24 hours (standard claim)
+        // Add custom claims if needed, e.g., role
+        // custom: { role: 'admin' }
+    };
+    const token = await sign(payload, secret); // Use the sign function
+    console.log('[Auth] JWT token generated.');
+    return token;
 }
 
 /**
