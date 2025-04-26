@@ -10,6 +10,7 @@ import { handleOrderDetails } from './handlers/orderDetails';
 import { handleDecideCampaign } from './handlers/decideCampaign';
 import { handlePaypalReturn } from './handlers/paypalReturn'; // Added PayPal return handler
 import { handleAdminLogin } from './handlers/adminAuth'; // Added Admin Login handler
+import { handleListSites } from './admin/api/config'; // Added Admin Config handler
 
 /**
  * Main request router for the Cloudflare Worker.
@@ -106,6 +107,13 @@ export async function routeRequest(request: Request, env: Env, ctx: ExecutionCon
         else if (pathname === '/admin/api/auth/login' && method === 'POST') {
             console.log(`[Router] Routing to Admin Login Handler`);
             return await handleAdminLogin(request, env, ctx);
+        }
+        else if (pathname === '/admin/api/config/sites' && method === 'GET') {
+            console.log(`[Router] Routing to Admin List Sites Handler`);
+            // Note: handleListSites expects an AuthenticatedRequest, but the router doesn't automatically provide that.
+            // The handler itself needs to perform authentication/authorization.
+            // We might need to refactor this later to use middleware.
+            return await handleListSites(request as any, env); // Cast request for now
         }
 
         // --- Fallback for unhandled routes ---
