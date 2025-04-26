@@ -1,6 +1,7 @@
 import { Env } from './types';
 import { ExecutionContext } from '@cloudflare/workers-types';
 import { handleOptions, addCorsHeaders } from './middleware/cors'; // Import CORS handlers
+import { authenticateRequest } from './admin/middleware/auth'; // Import Auth middleware
 
 // Import API Handlers
 import { handleCheckout } from './handlers/checkout';
@@ -104,16 +105,35 @@ export async function routeRequest(request: Request, env: Env, ctx: ExecutionCon
             console.log(`[Router] Routing to PayPal Return Handler`);
             return await handlePaypalReturn(request, env, ctx);
         }
-        else if (pathname === '/admin/api/auth/login' && method === 'POST') {
-            console.log(`[Router] Routing to Admin Login Handler`);
-            return await handleAdminLogin(request, env, ctx);
-        }
-        else if (pathname === '/admin/api/config/sites' && method === 'GET') {
-            console.log(`[Router] Routing to Admin List Sites Handler`);
-            // Note: handleListSites expects an AuthenticatedRequest, but the router doesn't automatically provide that.
-            // The handler itself needs to perform authentication/authorization.
-            // We might need to refactor this later to use middleware.
-            return await handleListSites(request as any, env); // Cast request for now
+        else if (pathname.startsWith('/admin/api/')) {
+            // --- Handle Protected Admin API Routes ---
+            console.log(`[Router] Protected admin route ${pathname}, applying authentication...`);
+            const authResult = await authenticateRequest(request, env);
+
+            // If authenticateRequest returns a Response, it's an error (401), return it directly
+            if (authResult instanceof Response) {
+                console.log(`[Router] Authentication failed for ${pathname}, returning ${authResult.status} response.`);
+                return authResult;
+            }
+
+            // If authentication passed, authResult is the AuthenticatedRequest
+            const authenticatedRequest = authResult;
+            console.log(`[Router] Authentication successful for ${pathname}.`);
+
+            // Now route based on the specific admin path
+            if (pathname === '/admin/api/auth/login' && method === 'POST') {
+                // Login doesn't strictly need authenticateRequest, but it doesn't hurt if it passes through
+                console.log(`[Router] Routing to Admin Login Handler`);
+                return await handleAdminLogin(authenticatedRequest, env, ctx);
+            }
+            else if (pathname === '/admin/api/config/sites' && method === 'GET') {
+                console.log(`[Router] Routing to Admin List Sites Handler`);
+                return await handleListSites(authenticatedRequest, env); // Pass the authenticated request
+            }
+            // Add other protected admin routes here...
+            // else if (pathname === '/admin/api/some-other-route' && method === 'POST') {
+            //     return await handleSomeOtherAdminRoute(authenticatedRequest, env);
+            // }
         }
 
         // --- Fallback for unhandled routes ---
