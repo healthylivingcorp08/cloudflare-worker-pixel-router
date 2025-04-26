@@ -9,6 +9,7 @@ import { handlePagePixels } from './handlers/pagePixels';
 import { handleOrderDetails } from './handlers/orderDetails';
 import { handleDecideCampaign } from './handlers/decideCampaign';
 import { handlePaypalReturn } from './handlers/paypalReturn'; // Added PayPal return handler
+import { handleAdminLogin } from './handlers/adminAuth'; // Added Admin Login handler
 
 /**
  * Main request router for the Cloudflare Worker.
@@ -101,6 +102,10 @@ export async function routeRequest(request: Request, env: Env, ctx: ExecutionCon
         else if (pathname === '/checkout/paypal-return' && method === 'GET') {
             console.log(`[Router] Routing to PayPal Return Handler`);
             return await handlePaypalReturn(request, env, ctx);
+        }
+        else if (pathname === '/admin/api/auth/login' && method === 'POST') {
+            console.log(`[Router] Routing to Admin Login Handler`);
+            return await handleAdminLogin(request, env, ctx);
         }
 
         // --- Fallback for unhandled routes ---
