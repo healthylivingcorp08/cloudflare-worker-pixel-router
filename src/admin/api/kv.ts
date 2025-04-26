@@ -406,7 +406,7 @@ export async function handleBulkDelete(request: AuthenticatedRequest, env: Env):
  */
 export async function handleCreateSiteFromTemplate(request: AuthenticatedRequest, env: Env): Promise<Response> {
   // Requires permission to create/edit KV values
-  const permissionCheckCreate = await requirePermission('edit_pixel_kv')(request, env);
+  const permissionCheckCreate = await requirePermission('edit_system_settings')(request, env); // Changed to require admin permission
   if (permissionCheckCreate) return permissionCheckCreate; // Return 403 if permission denied
 
   try {
