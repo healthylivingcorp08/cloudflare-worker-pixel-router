@@ -93,14 +93,15 @@ async function getActionKeys(
     return []; // Return empty list if affid is missing or empty
   }
 
-  // Ensure affid is treated as uppercase for key construction, as requested
-  const affidUpper = affid.trim().toUpperCase();
+  // Convert the affid from the URL parameter to lowercase for consistent lookup
+  const affidLower = affid.trim().toLowerCase();
 
   const scrubStatusString = isScrub ? 'Scrub' : 'Normal';
-  // Construct the specific key name, e.g., esther_checkout_affid_MYAFF_NormalActions
-  const actionListKey = `${siteId}_${event}_affid_${affidUpper}_${scrubStatusString}Actions`;
+  // Construct the specific key name using the lowercase affid
+  // Example: esther_checkout_affid_testaff_NormalActions
+  const actionListKey = `${siteId}_${event}_affid_${affidLower}_${scrubStatusString}Actions`;
 
-  console.log(`getActionKeys: Attempting to fetch affiliate-specific action list key: ${actionListKey}`);
+  console.log(`getActionKeys: Attempting to fetch affiliate-specific action list key (using lowercase affid): ${actionListKey}`);
 
   const actionKeysStr = await env.PIXEL_CONFIG.get(actionListKey);
 
