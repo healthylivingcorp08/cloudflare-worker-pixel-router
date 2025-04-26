@@ -12,7 +12,13 @@ import { handleDecideCampaign } from './handlers/decideCampaign';
 import { handlePaypalReturn } from './handlers/paypalReturn'; // Added PayPal return handler
 import { handleAdminLogin } from './handlers/adminAuth'; // Added Admin Login handler
 import { handleListSites } from './admin/api/config'; // Site listing handler
-import { handleListKeys as handleListKvKeys, handleCreateSiteFromTemplate } from './admin/api/kv'; // Import KV list and site creation handlers
+import {
+  handleListKeys as handleListKvKeys,
+  handleCreateSiteFromTemplate,
+  handleUpdateValue, // Import KV update handler
+  handleCreateValue, // Import KV create handler
+  handleDeleteValue  // Import KV delete handler
+} from './admin/api/kv'; // Import KV handlers
 
 /**
  * Main request router for the Cloudflare Worker.
@@ -141,6 +147,32 @@ export async function routeRequest(request: Request, env: Env, ctx: ExecutionCon
                 // handleCreateSiteFromTemplate expects { siteId: "..." } in the body
                 // No siteId path parameter needed here.
                 return await handleCreateSiteFromTemplate(authenticatedRequest, env);
+            }
+            // Route for updating a specific KV value
+            else if (pathname.startsWith('/admin/api/kv/') && method === 'PUT') {
+                // Extract the key from the path: /admin/api/kv/{key}
+                const key = decodeURIComponent(pathname.substring('/admin/api/kv/'.length));
+                if (!key) {
+                    return addCorsHeaders(new Response(JSON.stringify({ success: false, error: 'Missing KV key in path.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
+                }
+                console.log(`[Router] Routing to Admin Update KV Value Handler for key: ${key}`);
+                return await handleUpdateValue(authenticatedRequest, env, key);
+            }
+            // Route for creating a new KV value
+            else if (pathname === '/admin/api/kv' && method === 'POST') {
+                console.log(`[Router] Routing to Admin Create KV Value Handler`);
+                // handleCreateValue expects { key: "...", value: "..." } in the body
+                return await handleCreateValue(authenticatedRequest, env);
+            }
+            // Route for deleting a specific KV value
+            else if (pathname.startsWith('/admin/api/kv/') && method === 'DELETE') {
+                // Extract the key from the path: /admin/api/kv/{key}
+                const key = decodeURIComponent(pathname.substring('/admin/api/kv/'.length));
+                if (!key) {
+                    return addCorsHeaders(new Response(JSON.stringify({ success: false, error: 'Missing KV key in path.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
+                }
+                console.log(`[Router] Routing to Admin Delete KV Value Handler for key: ${key}`);
+                return await handleDeleteValue(authenticatedRequest, env, key);
             }
             // Add other protected admin routes here...
             // else if (pathname === '/admin/api/some-other-route' && method === 'POST') {
