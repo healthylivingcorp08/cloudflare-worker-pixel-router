@@ -13,7 +13,7 @@ async function generateJwtToken(username: string, secret: string): Promise<strin
         iat: Math.floor(Date.now() / 1000), // Issued At (standard claim)
         exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24), // Expiration Time: 24 hours (standard claim)
         // Add custom claims if needed, e.g., role
-        // custom: { role: 'admin' }
+        custom: { role: 'admin' } // Assign 'admin' role on successful login
     };
     const token = await sign(payload, secret); // Use the sign function
     console.log('[Auth] JWT token generated.');
