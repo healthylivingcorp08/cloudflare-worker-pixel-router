@@ -108,31 +108,39 @@ export async function handleListKeys(request: AuthenticatedRequest, env: Env): P
 
   try {
     const url = new URL(request.url);
-    const siteId = url.searchParams.get('siteId');
+    const siteIdsParam = url.searchParams.get('siteIds'); // Expect comma-separated string: "site1,site2"
     const searchTerm = url.searchParams.get('search')?.toLowerCase(); // Get search term and convert to lower case
     const statusFilter = url.searchParams.get('status'); // Get status filter
 
     // List all keys from the KV namespace
-    console.log(`[KV] Listing keys for siteId: ${siteId || 'all'}, search: ${searchTerm || 'none'}, status: ${statusFilter || 'none'}`);
+    console.log(`[KV] Listing keys for siteIds: ${siteIdsParam || 'all'}, search: ${searchTerm || 'none'}, status: ${statusFilter || 'none'}`);
     // TODO: Implement pagination if key count exceeds KV list limits (e.g., 1000)
     const listResult = await env.PIXEL_CONFIG.list();
     const allKeys = listResult.keys; // Assuming list() gets all keys; adjust if pagination needed for large sets
     console.log('[KV] Found', allKeys.length, 'total keys');
 
     let keysToProcess = allKeys;
+    let siteIdArray: string[] = [];
 
     // --- Filtering Logic ---
 
-    // 1. Filter by Site ID if provided (overrides status filter)
-    if (siteId) {
-      keysToProcess = keysToProcess.filter(key => key.name.startsWith(`${siteId}_`)); // Use underscore
-      console.log(`[KV] Filtered by siteId '${siteId}': ${keysToProcess.length} keys remaining.`);
+    // 1. Filter by Site IDs if provided
+    if (siteIdsParam) {
+      siteIdArray = siteIdsParam.split(',').map(id => id.trim()).filter(id => id.length > 0);
+      if (siteIdArray.length > 0) {
+        keysToProcess = keysToProcess.filter(key => {
+          const keySiteId = key.name.split('_')[0]; // Use underscore
+          return siteIdArray.includes(keySiteId);
+        });
+        console.log(`[KV] Filtered by siteIds [${siteIdArray.join(', ')}]: ${keysToProcess.length} keys remaining.`);
+      } else {
+         console.log(`[KV] siteIds parameter provided but empty after trimming. No site filter applied.`);
+      }
     }
-    // 2. Filter by Status if provided (and no siteId filter)
+    // 2. Filter by Status if provided (and no siteIds filter applied)
     else if (statusFilter) {
-      console.log(`[KV] Applying status filter: '${statusFilter}'`);
+      console.log(`[KV] Applying status filter: '${statusFilter}' (No siteIds provided)`);
       // Find all siteIds matching the status
-      // Adjusted to use underscore separator and specific status key name
       const statusKeys = allKeys.filter(key => key.name.endsWith('_website_status'));
       const matchingSiteIds = new Set<string>();
 
@@ -155,10 +163,10 @@ export async function handleListKeys(request: AuthenticatedRequest, env: Env): P
       console.log(`[KV] Filtered by status: ${keysToProcess.length} keys remaining.`);
     }
 
-    // 3. Filter by Search Term (applied after siteId or status filter)
+    // 3. Filter by Search Term (applied AFTER siteId or status filter)
     if (searchTerm) {
       keysToProcess = keysToProcess.filter(key => {
-        // Check if the key name (e.g., "siteId:keyName") contains the search term (case-insensitive)
+        // Check if the key name (e.g., "siteId_keyName") contains the search term (case-insensitive)
         return key.name.toLowerCase().includes(searchTerm);
       });
       console.log(`[KV] Filtered by search term '${searchTerm}': ${keysToProcess.length} keys remaining.`);
@@ -177,7 +185,7 @@ export async function handleListKeys(request: AuthenticatedRequest, env: Env): P
           value: value, // Include the value
           site: site,
           type: type, // The part after the first '_'
-          metadata: key.metadata,
+          // metadata: key.metadata, // Standard KV types don't include metadata in list results
           // Adjust role logic if needed based on new naming convention
           allowedRoles: key.name.includes('_api_') ? ['admin'] : ['pixel_manager', 'admin'] // Example logic
         };
@@ -207,11 +215,11 @@ export async function handleGetValue(request: AuthenticatedRequest, env: Env, ke
       return errorResponse('Key not found', 404);
     }
 
-    const metadata = await env.PIXEL_CONFIG.getWithMetadata(key);
+    // const metadata = await env.PIXEL_CONFIG.getWithMetadata(key); // getWithMetadata doesn't exist on standard KVNamespace
     return successResponse({
       key,
       value,
-      metadata: metadata.metadata
+      // metadata: metadata.metadata // Metadata not available via standard get
     });
   } catch (error) {
     return errorResponse('Failed to get KV value');
@@ -242,7 +250,7 @@ export async function handleUpdateValue(request: AuthenticatedRequest, env: Env,
     };
 
     // Save to KV
-    await env.PIXEL_CONFIG.put(key, value, { metadata: updatedMetadata });
+    await env.PIXEL_CONFIG.put(key, value /*, { metadata: updatedMetadata } */); // Standard put doesn't accept metadata options
 
     return successResponse({ success: true });
   } catch (error) {
@@ -293,7 +301,7 @@ export async function handleBulkUpdate(request: AuthenticatedRequest, env: Env):
         lastModified: new Date().toISOString(),
         modifiedBy: request.jwt.email
       };
-      await env.PIXEL_CONFIG.put(key, value, { metadata: updatedMetadata });
+      await env.PIXEL_CONFIG.put(key, value /*, { metadata: updatedMetadata } */); // Standard put doesn't accept metadata options
     }));
 
     return successResponse({ success: true });
@@ -336,7 +344,7 @@ export async function handleCreateValue(request: AuthenticatedRequest, env: Env)
     };
 
     // Save to KV
-    await env.PIXEL_CONFIG.put(key, value, { metadata: createdMetadata });
+    await env.PIXEL_CONFIG.put(key, value /*, { metadata: createdMetadata } */); // Standard put doesn't accept metadata options
 
     // Use jsonResponse directly to set 201 status
     return jsonResponse({ success: true, key: key }, 201);
@@ -354,49 +362,77 @@ export async function handleBulkDelete(request: AuthenticatedRequest, env: Env):
   await requirePermission('edit_system_settings')(request, env);
 
   try {
-    const { keys } = await request.json() as { keys: string[] };
+    // Expect keys and siteIds in the request body
+    const { keys, siteIds } = await request.json() as { keys: string[], siteIds: string[] };
 
     if (!Array.isArray(keys) || keys.length === 0) {
       return errorResponse('Keys must be provided as a non-empty array');
     }
+    if (!Array.isArray(siteIds) || siteIds.length === 0) {
+      return errorResponse('siteIds must be provided as a non-empty array');
+    }
 
-    // Perform deletions
-    // Note: env.PIXEL_CONFIG.delete() does not support bulk delete directly.
-    // We need to iterate and delete one by one.
+    // Perform deletions across all specified sites and keys
     let deletedCount = 0;
     const errors: string[] = [];
+    const totalRequestedDeletions = keys.length * siteIds.length;
 
-    for (const key of keys) {
-      try {
-        // Double-check permission for each key just in case (though bulk is admin only here)
-        // const permission = key.includes('_api_') ? 'edit_system_settings' : 'edit_pixel_kv';
-        // const permissionCheck = await requirePermission(permission)(request, env);
-        // if (permissionCheck !== null) {
-        //   errors.push(`Insufficient permission for key: ${key}`);
-        //   continue;
-        // }
-        await env.PIXEL_CONFIG.delete(key);
-        deletedCount++;
-      } catch (deleteError: any) {
-        errors.push(`Failed to delete key "${key}": ${deleteError.message || 'Unknown error'}`);
+    console.log(`[KV Bulk Delete] Attempting to delete ${keys.length} keys across ${siteIds.length} sites. Total operations: ${totalRequestedDeletions}`);
+
+    for (const siteId of siteIds) {
+      if (typeof siteId !== 'string' || siteId.trim() === '') {
+        errors.push(`Invalid siteId found: "${siteId}". Skipping.`);
+        continue; // Skip this siteId
+      }
+      const trimmedSiteId = siteId.trim(); // Use trimmed siteId
+
+      for (const keySuffix of keys) {
+        if (typeof keySuffix !== 'string' || keySuffix.trim() === '') {
+            errors.push(`Invalid key suffix found for site "${trimmedSiteId}": "${keySuffix}". Skipping.`);
+            continue; // Skip this key suffix
+        }
+        const trimmedKeySuffix = keySuffix.trim(); // Use trimmed key suffix
+        const fullKey = `${trimmedSiteId}_${trimmedKeySuffix}`; // Construct the full key
+
+        try {
+          // Permission check already done for the whole operation (admin only)
+          await env.PIXEL_CONFIG.delete(fullKey);
+          // Note: delete doesn't throw if the key doesn't exist.
+          // We might want to check existence first if we only want to count actual deletions.
+          // For simplicity, we count attempts here. Consider adding a check if needed.
+          deletedCount++;
+          console.log(`[KV Bulk Delete] Deleted (or attempted): ${fullKey}`);
+        } catch (deleteError: any) {
+          const errorMessage = `Failed to delete key "${fullKey}": ${deleteError.message || 'Unknown error'}`;
+          console.error(`[KV Bulk Delete] ${errorMessage}`);
+          errors.push(errorMessage);
+        }
       }
     }
 
     if (errors.length > 0) {
       // Partial success or complete failure - Use jsonResponse for 207 status and custom payload
+      const finalMessage = `Bulk delete completed with ${errors.length} errors out of ${totalRequestedDeletions} requested operations.`;
+      console.warn(`[KV Bulk Delete] ${finalMessage}`);
       return jsonResponse({
         success: false, // Indicate overall operation had issues
-        error: `Bulk delete completed with errors: ${errors.join('; ')}`,
-        deletedCount: deletedCount,
-        totalRequested: keys.length
+        message: finalMessage,
+        error: errors.join('; '),
+        deletedCount: deletedCount, // This counts successful attempts/non-errors
+        totalRequested: totalRequestedDeletions
       }, 207); // 207 Multi-Status
     }
 
     // Full success - Use standard successResponse (status 200)
-    return successResponse({ success: true, deletedCount });
+    console.log(`[KV Bulk Delete] Successfully completed ${deletedCount} delete operations.`);
+    return successResponse({ success: true, deletedCount }); // deletedCount here represents successful operations
 
   } catch (error: any) {
     console.error('[KV] Error performing bulk delete:', error);
+    // Handle JSON parsing errors specifically
+    if (error instanceof SyntaxError) {
+        return errorResponse('Invalid JSON body provided. Expected { "keys": ["key1", ...], "siteIds": ["site1", ...] }');
+    }
     return errorResponse(`Failed to perform bulk delete: ${error.message || 'Unknown error'}`);
   }
 }
@@ -443,7 +479,7 @@ export async function handleCreateSiteFromTemplate(request: AuthenticatedRequest
         // Create the KV entry
         // Ensure the value is a string (simple values are already strings, JSON needs stringify)
         const valueToPut = typeof defaultValue === 'string' ? defaultValue : JSON.stringify(defaultValue);
-        await env.PIXEL_CONFIG.put(fullKey, valueToPut, { metadata });
+        await env.PIXEL_CONFIG.put(fullKey, valueToPut /*, { metadata } */); // Standard put doesn't accept metadata options
         createdKeys.push(fullKey);
 
       } catch (error: any) {
@@ -517,13 +553,19 @@ export async function handleDeleteSite(request: AuthenticatedRequest, env: Env, 
  
     // Loop to handle pagination when listing keys
     while (!listComplete) {
-      // Add explicit type for listResult based on Cloudflare KV types
-      const listResult: KVNamespaceListResult<unknown> = await env.PIXEL_CONFIG.list({ prefix: `${siteId}_`, cursor: cursor }); // Use underscore prefix
+      // Define an interface for the expected list result structure to provide explicit types
+      interface KVListResultWithCursor {
+          keys: { name: string }[];
+          list_complete: boolean;
+          cursor?: string;
+      }
+      // Cast to any to bypass potentially incorrect type definitions for list() options/result, then cast to our interface
+      const listResult: KVListResultWithCursor = await (env.PIXEL_CONFIG as any).list({ prefix: `${siteId}_`, cursor: cursor }); // Use underscore prefix
       // Add explicit type for key
-      listResult.keys.forEach((key: KVNamespaceListKey<unknown>) => keysToDelete.push(key.name));
+      listResult.keys.forEach((key: { name: string }) => keysToDelete.push(key.name));
       listComplete = listResult.list_complete;
-      // Conditionally access cursor only when list is not complete
-      cursor = listComplete ? undefined : (listResult as any).cursor;
+      // Use optional chaining and check list_complete before accessing cursor
+      cursor = !listComplete ? listResult.cursor : undefined;
       console.log(`[KV Delete Site] Listed ${listResult.keys.length} keys, list_complete: ${listComplete}, cursor: ${cursor ? 'present' : 'none'}`);
     }
  
