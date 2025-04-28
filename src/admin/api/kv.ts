@@ -83,8 +83,21 @@ const defaultSiteKvEntries = {
     "action_EverflowPostback"
   ]),
   // Optional: Add ScrubAction lists if needed, otherwise they use NormalActions
+// Page-Specific Pixel Lists (Affiliate Independent)
+"page_inter_pixels": JSON.stringify([ // Matches URLs ending in /inter
+  "action_EverflowClickPixel", // Assumes handlePagePixels prepends siteId
+  "action_GenericPageView"     // Example generic page view pixel
+]),
+"page_pre_pixels": JSON.stringify([      // Matches URLs ending in /pre
+  "action_EverflowClickPixel", // Assumes handlePagePixels prepends siteId
+  "action_GenericPageView"     // Example generic page view pixel
+]),
+"page_home_pixels": JSON.stringify([       // Matches root path ('/') checkout page load
+  "action_EverflowClickPixel", // Assumes handlePagePixels prepends siteId
+  "action_GenericPageView"     // Example generic page view pixel
+]),
 
-  // Action Definitions (Using embedded templates)
+// Action Definitions (Using embedded templates)
   "action_FacebookPurchase": actionFbPurchaseTemplate,
   "action_GoogleAnalyticsPurchase": actionGaPurchaseTemplate,
   "action_EverflowPostback": actionEfPostbackTemplate,
