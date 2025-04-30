@@ -109,11 +109,12 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             console.log(`[CheckoutHandler] paymentFieldsForSticky object:`, JSON.stringify(paymentFieldsForSticky));
             // --- End RAW card details ---
         } else if (determinedPaymentMethod === 'paypal') {
-            // If PayPal, we might just need to indicate the type, or Sticky might handle it differently
-            // Based on the example, PayPal details aren't sent in the same way.
-            // Let's assume for now we don't add specific fields for PayPal in this step.
-            // paymentFieldsForSticky = { paymentType: 'paypal' }; // Example if needed
-            console.log(`[CheckoutHandler] PayPal payment method selected, no card fields added.`);
+            // Add required fields for Sticky.io PayPal Payments flow
+            paymentFieldsForSticky = {
+                creditCardType: 'paypal', // Required identifier
+                // alt_pay_return_url will be added below using request.url
+            };
+            console.log(`[CheckoutHandler] PayPal payment method selected, adding required fields.`);
         }
 
 
@@ -152,6 +153,7 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             // Transaction Details (Required)
             tranType: 'Sale',
             campaignId: targetCampaignId, // Required
+            forceGatewayId: "140", // Force PayPal gateway for testing
             // Map products from checkoutPayload to Sticky.io offers structure (REQUIRED)
             // IMPORTANT: offer_id and billing_model_id MUST be passed from frontend in checkoutPayload.products
             // Ensure we are accessing the correct fields from the 'p' object which represents an item from checkoutPayload.products
@@ -189,7 +191,18 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             utm_term: state.trackingParams?.utm_term,
 
             // Add payment fields directly to the payload if it's a card payment
-            ...(determinedPaymentMethod === 'card' ? paymentFieldsForSticky : {}),
+            ...(paymentFieldsForSticky), // Spread payment fields (card or paypal)
+            // Add alt_pay_return_url specifically for PayPal, pointing to the upsell page
+            ...(determinedPaymentMethod === 'paypal' ? (() => {
+                const originalUrl = new URL(request.url);
+                let basePath = originalUrl.pathname;
+                if (basePath.endsWith('/')) {
+                    basePath = basePath.slice(0, -1); // Remove trailing slash if present
+                }
+                const returnUrl = `${originalUrl.origin}${basePath}/upsell1${originalUrl.search}`;
+                console.log(`[CheckoutHandler] Setting alt_pay_return_url for PayPal to: ${returnUrl}`); // Log the constructed URL
+                return { alt_pay_return_url: returnUrl };
+            })() : {}),
         };
 
 
