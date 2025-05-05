@@ -55,7 +55,7 @@ export function handleOptions(request: Request): Response {
         'Access-Control-Allow-Origin': origin!, // Assert origin is non-null here
         'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
         // Allow standard headers plus custom ones used by the client
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Internal-Transaction-Id, X-Target-Campaign-Id',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Internal-Transaction-Id, X-Target-Campaign-Id, x-site-id, x-sticky-url-id',
         'Access-Control-Max-Age': '86400',
       },
     });
@@ -85,7 +85,7 @@ export function addCorsHeaders(response: Response, request: Request): Response {
        response.headers.set('Vary', 'Origin');
        response.headers.set('Access-Control-Allow-Origin', origin!); // Assert origin is non-null here
        // Also add Allow-Headers to the actual response for good measure, though primarily for preflight
-       response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Internal-Transaction-Id, X-Target-Campaign-Id');
+       response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Internal-Transaction-Id, X-Target-Campaign-Id, x-site-id, x-sticky-url-id');
       // If the client needs to READ headers from the response, use Expose-Headers
       // response.headers.set('Access-Control-Expose-Headers', '...');
    }

@@ -32,16 +32,22 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
     // --- End Sticky URL ID Handling ---
 
     const upsellData = await request.json() as any; // Consider using a specific type from pixel-router-client
-    // Destructure expected body fields, including gatewayId
-    const { siteId, step, upsellType, offers, shippingId, gatewayId, campaignId } = upsellData;
+    // --- DEBUG: Log incoming request body ---
+    console.log('[UpsellHandler] DEBUG: Received upsellData:', JSON.stringify(upsellData, null, 2));
+    // --- END DEBUG ---
+    // Destructure expected body fields, including gatewayId and optional forceGatewayId
+    const { siteId, step, upsellType, offers, shippingId, gatewayId, campaignId, forceGatewayId } = upsellData; // Added forceGatewayId
     if (shippingId === undefined) {
         console.error(`[UpsellHandler] Missing shippingId in request payload`);
         return new Response(JSON.stringify({ success: false, message: 'Missing required field: shippingId' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
-    // Add validation for gatewayId when accepting upsell
-    if (upsellType === 'accept' && gatewayId === undefined) {
-        console.error(`[UpsellHandler] Missing gatewayId in request payload for upsell accept`);
-        return new Response(JSON.stringify({ success: false, message: 'Missing required field: gatewayId' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    // Add validation for gatewayId or forceGatewayId when accepting upsell
+    if (upsellType === 'accept' && gatewayId === undefined && forceGatewayId === undefined) {
+        console.error(`[UpsellHandler] Missing both gatewayId and forceGatewayId in request payload for upsell accept`);
+        return new Response(JSON.stringify({ success: false, message: 'Missing required payment gateway identifier (gatewayId or forceGatewayId)' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+        });
     }
 
 
@@ -60,7 +66,7 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
     const acceptMissing = (upsellType === 'accept') ? [
         !offers && 'offers',
         (shippingId === undefined || shippingId === null) && 'shippingId', // Explicitly check for undefined or null
-        (gatewayId === undefined || gatewayId === null) && 'gatewayId', // Added gatewayId validation for accept
+        (gatewayId === undefined || gatewayId === null) && (forceGatewayId === undefined || forceGatewayId === null) && 'gatewayId or forceGatewayId', // Check for either payment gateway identifier
     ].filter(Boolean) : [];
 
     const allMissing = [...baseMissing, ...acceptMissing];
@@ -109,6 +115,9 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
 
     // Removed config validation section that was here previously
     // TODO: Update PixelState type in src/types.ts to include stickyOrderId_Initial: string | null
+    // --- DEBUG: Log stickyOrderId_Initial from state ---
+    console.log(`[UpsellHandler] DEBUG: Value of state.stickyOrderId_Initial from KV: ${state.stickyOrderId_Initial}`);
+    // --- END DEBUG ---
     if (!state.stickyOrderId_Initial) {
         console.error(`[UpsellHandler] Missing state.stickyOrderId_Initial for key: ${stateKey}`); // Log the key
         return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Initial order ID missing from session state.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
@@ -174,11 +183,17 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
 
     console.log(`[UpsellHandler] Calling Sticky.io Upsell for step ${upsellStepNum}`);
 
+    // --- DEBUG: Log payload before sending to callStickyUpsell ---
+    console.log('[UpsellHandler] DEBUG: stickyPayload before callStickyUpsell:', JSON.stringify(payloadToSend, null, 2));
+    // --- END DEBUG ---
+
     // --- 8. Call Sticky.io API using the library function --- // Renumbered step
     // console.log(`[UpsellHandler] Sticky.io Upsell Payload: ${JSON.stringify(payloadToSend)}`); // Avoid logging potentially sensitive data
 
-    // Pass stickyBaseUrl and gatewayId to the updated function
-    const stickyResponse = await callStickyUpsell(stickyBaseUrl, payloadToSend, env, gatewayId);
+    // Pass stickyBaseUrl and the determined gatewayId (prioritizing forceGatewayId) to the updated function
+    const finalGatewayId = forceGatewayId ?? gatewayId; // Use forceGatewayId if present, otherwise fallback to gatewayId
+    console.log(`[UpsellHandler] Using finalGatewayId: ${finalGatewayId} (forced: ${!!forceGatewayId})`); // Log which gateway is used
+    const stickyResponse = await callStickyUpsell(stickyBaseUrl, payloadToSend, env, finalGatewayId);
 
     console.log(`[UpsellHandler] Sticky.io Upsell Response Status for step ${upsellStepNum}: ${stickyResponse._status}`);
 

@@ -1,4 +1,5 @@
 import { SiteConfig, Env, PageConfig, PixelConfig, ApiEndpointConfig } from './types';
+import { getCache, setCache } from './utils/cache';
 
 /**
  * Map of hostnames to site IDs
@@ -86,6 +87,15 @@ function getSiteIdFromHostname(hostname: string): string {
  * @param env Cloudflare Worker environment
  */
 async function loadSiteConfig(siteId: string, env: Env): Promise<SiteConfig> {
+  const cacheKey = `siteConfig_${siteId}`;
+  const cachedConfig = getCache<SiteConfig>(cacheKey);
+
+  if (cachedConfig) {
+    console.log(`Cache hit for site config: ${siteId}`);
+    return cachedConfig;
+  }
+
+  console.log(`Cache miss for site config: ${siteId}. Fetching from KV.`);
   try {
     // Define keys based on the granular structure
     const scrubPercentKey = `${siteId}_rule_scrubPercent`;
@@ -140,7 +150,7 @@ async function loadSiteConfig(siteId: string, env: Env): Promise<SiteConfig> {
     const siteConfig: SiteConfig = {
       siteId: siteId, // Add siteId to the config object
       domain: domainStr,
-      scrubPercent: scrubPercent,
+      // scrubPercent: scrubPercent, // Removed to align with SiteConfig type definition
       pages: pages
     };
 
@@ -148,6 +158,10 @@ async function loadSiteConfig(siteId: string, env: Env): Promise<SiteConfig> {
     // if (!isSiteConfig(siteConfig)) {
     //    throw new Error(`Constructed SiteConfig is invalid for site: ${siteId}`);
     // }
+
+    // Store in cache with a 60-second TTL
+    setCache(cacheKey, siteConfig, 60);
+    console.log(`Cached site config for: ${siteId}`);
 
     return siteConfig;
 

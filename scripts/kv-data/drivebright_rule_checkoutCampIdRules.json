@@ -1,4 +1,4 @@
 [
-  { "campId": "CAMP123", "actions": ["drivebright_action_scrubPixel"] },
-  { "campId": "CAMP456", "actions": [] }
+  { "campId": "432", "actions": ["drivebright_action_scrubPixel"] },
+  { "campId": "433", "actions": [] }
 ]

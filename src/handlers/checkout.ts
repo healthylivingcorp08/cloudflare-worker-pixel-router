@@ -170,7 +170,7 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             // Transaction Details (Required)
             tranType: 'Sale',
             campaignId: targetCampaignId, // Required
-            forceGatewayId: "140", // Force PayPal gateway for testing
+            // forceGatewayId: "140", // Force PayPal gateway for testing
             // Map products from checkoutPayload to Sticky.io offers structure (REQUIRED)
             // IMPORTANT: offer_id and billing_model_id MUST be passed from frontend in checkoutPayload.products
             // Ensure we are accessing the correct fields from the 'p' object which represents an item from checkoutPayload.products
@@ -266,9 +266,10 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
 
         if (stickyOrderId && state) { // Check if state is not null
             state.stickyOrderId_Initial = String(stickyOrderId);
-            // Await the KV put to ensure it completes before responding
-            await env.PIXEL_STATE.put(stateKey, JSON.stringify(state));
-            console.log(`[CheckoutHandler] Stored stickyOrderId_Initial ${stickyOrderId} for ${internal_txn_id} (await completed)`);
+            // Make the KV put synchronous to ensure it completes before upsell handler reads
+            await env.PIXEL_STATE.put(stateKey, JSON.stringify(state))
+                .then(() => console.log(`[CheckoutHandler] Stored stickyOrderId_Initial ${stickyOrderId} for ${internal_txn_id} (synchronous)`))
+                .catch(err => console.error(`[CheckoutHandler] Failed to update KV state (stickyOrderId_Initial) for ${internal_txn_id}: ${err.message}`));
         }
 
         if (stickyResponse.response_code === '100') {

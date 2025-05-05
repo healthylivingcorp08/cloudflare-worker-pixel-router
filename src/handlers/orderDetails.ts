@@ -2,6 +2,7 @@ import { Env, ExtendedOrderConfirmation, Product, Address } from '../types'; // 
 import { ExecutionContext } from '@cloudflare/workers-types';
 import { addCorsHeaders } from '../middleware/cors';
 import { callStickyOrderView } from '../lib/sticky'; // Import the Sticky.io library function
+import { STICKY_URL_MAP } from '../config'; // Import the URL map
 
 /**
  * Handles POST requests to /api/order-details.
@@ -21,14 +22,20 @@ export async function handleOrderDetails(request: Request, env: Env, ctx: Execut
 
     console.log(`[OrderDetailsHandler] Fetching order details for orderId: ${orderIdStr}`);
 
-    // --- 0. Check for required environment variables ---
-    if (!env.STICKY_API_URL) {
-        console.error('[OrderDetailsHandler] STICKY_API_URL environment variable is not set.');
-        return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Server configuration error: Sticky.io API URL is missing.' }), { status: 500, headers: { 'Content-Type': 'application/json' } }), request);
+    // --- 0. Determine Sticky.io Base URL ---
+    // TODO: Ideally, determine the identifier dynamically based on hostname/siteId if needed
+    const stickyUrlIdentifier = '1'; // Assuming '1' for drivebright based on frontend constants
+    const stickyBaseUrl = STICKY_URL_MAP[stickyUrlIdentifier];
+
+    if (!stickyBaseUrl) {
+        console.error(`[OrderDetailsHandler] Sticky.io base URL not found in STICKY_URL_MAP for identifier: ${stickyUrlIdentifier}`);
+        return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Server configuration error: Cannot determine Sticky.io API URL.' }), { status: 500, headers: { 'Content-Type': 'application/json' } }), request);
     }
+    console.log(`[OrderDetailsHandler] Using Sticky.io base URL from map ('${stickyUrlIdentifier}'): ${stickyBaseUrl}`);
+
 
     // --- 1. Call Sticky.io API using the library function ---
-    const stickyResponse = await callStickyOrderView(env.STICKY_API_URL, [orderIdStr], env); // Pass order ID as an array
+    const stickyResponse = await callStickyOrderView(stickyBaseUrl, [orderIdStr], env); // Pass order ID as an array
 
     console.log(`[OrderDetailsHandler] Sticky.io Order View Response Status: ${stickyResponse._status}`);
     console.log(`[OrderDetailsHandler] Sticky.io Order View Response Body: ${JSON.stringify(stickyResponse)}`);

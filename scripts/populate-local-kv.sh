@@ -10,6 +10,8 @@ echo "Populating local KV for drivebright..."
 npx wrangler kv key put drivebright_rule_scrubPercent "20" --binding PIXEL_CONFIG --local
 npx wrangler kv key put drivebright_upsell2_normal_campaign_id "169" --binding PIXEL_CONFIG --local
 npx wrangler kv key put drivebright_stickyBaseUrl "https://your-sticky-base-url.com" --binding PIXEL_CONFIG --local
+npx wrangler kv key put drivebright_normal_campaign_id "433" --binding PIXEL_CONFIG --local
+npx wrangler kv key put drivebright_scrub_campaign_id "432" --binding PIXEL_CONFIG --local
 
 # --- JSON Values (from files) ---
 # Ensure the corresponding .json files exist in ./scripts/kv-data/

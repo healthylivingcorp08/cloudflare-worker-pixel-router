@@ -2,6 +2,7 @@ import type { KVNamespace, ExecutionContext, Request as CfRequest } from '@cloud
 // Import DataSources specifically from the parameters utility
 import { populateParameters, type DataSources as ParameterDataSources } from './utils/parameters';
 import type { Env, PixelState } from './types';
+import { getCache, setCache } from './utils/cache';
 // import { logError } from './logger'; // Assuming logger exists - Replaced with console.error
 
 // --- Types specific to Action Triggering ---
@@ -95,9 +96,20 @@ async function getActionKeys(
 
   // Convert the affid from the URL parameter to lowercase for consistent lookup
   const affidLower = affid.trim().toLowerCase();
-
   const scrubStatusString = isScrub ? 'Scrub' : 'Normal';
-  // Construct the specific key name using the lowercase affid
+
+  // Define cache key
+  const cacheKey = `actionKeys_${siteId}_${event}_${affidLower}_${scrubStatusString}`;
+  const cachedKeys = getCache<string[]>(cacheKey);
+
+  if (cachedKeys) {
+    console.log(`Cache hit for action keys: ${cacheKey}`);
+    return cachedKeys;
+  }
+
+  console.log(`Cache miss for action keys: ${cacheKey}. Fetching from KV.`);
+
+  // Construct the specific KV key name using the lowercase affid
   // Example: esther_checkout_affid_testaff_NormalActions
   const actionListKey = `${siteId}_${event}_affid_${affidLower}_${scrubStatusString}Actions`;
 
@@ -107,6 +119,8 @@ async function getActionKeys(
 
   if (!actionKeysStr) {
     console.log(`getActionKeys: Affiliate-specific action list key '${actionListKey}' not found in KV. No actions will be fired.`);
+    // Cache the negative result (empty array) to avoid repeated KV lookups for non-existent keys
+    setCache(cacheKey, [], 60); // Cache empty array for 60 seconds
     return []; // Return empty list if specific key not found
   }
 
@@ -115,7 +129,9 @@ async function getActionKeys(
     if (!Array.isArray(actionKeys)) {
        throw new Error('Parsed value is not an array');
     }
-    console.log(`getActionKeys: Found ${actionKeys.length} actions for key '${actionListKey}'.`);
+    console.log(`getActionKeys: Found ${actionKeys.length} actions for key '${actionListKey}'. Caching result.`);
+    // Store in cache with a 60-second TTL
+    setCache(cacheKey, actionKeys, 60);
     return actionKeys;
   } catch (e: any) {
     console.error(`getActionKeys: Failed to parse action list JSON for key '${actionListKey}'. Value: ${actionKeysStr}. Error: ${e.message}`);
@@ -192,12 +208,32 @@ export async function triggerInitialActions(
       return { clientSideActions: [] };
     }
 
-    // 6. Fetch Action Definitions (using siteId prefix)
-    const actionDefinitions: { key: string; definition: ActionDefinition | null }[] = await Promise.all(
+    // 6. Fetch Action Definitions (using siteId prefix and cache)
+    const actionDefinitions: { key: string; definition: ActionDefinition | null | undefined }[] = await Promise.all(
       actionKeys.map(async (key) => {
         const definitionKey = `${siteId}_${key}`; // e.g., esther_action_FacebookPurchase
+        const cacheKey = `actionDef_${definitionKey}`;
+        let definition: ActionDefinition | null | undefined = getCache<ActionDefinition>(cacheKey);
+
+        if (definition !== undefined) { // Check cache first (undefined means not cached or expired)
+          console.log(`Cache hit for action definition: ${cacheKey}`);
+          return { key, definition };
+        }
+
+        console.log(`Cache miss for action definition: ${cacheKey}. Fetching from KV.`);
         const definitionStr = await env.PIXEL_CONFIG.get(definitionKey);
-        return { key, definition: definitionStr ? JSON.parse(definitionStr) : null };
+        try {
+          definition = definitionStr ? JSON.parse(definitionStr) : null;
+          // Cache the result (even if null) for 60 seconds
+          setCache(cacheKey, definition, 60);
+          console.log(`Cached action definition for: ${cacheKey}`);
+          return { key, definition };
+        } catch (parseError: any) {
+          console.error(`Failed to parse action definition JSON for key '${definitionKey}'. Value: ${definitionStr}. Error: ${parseError.message}`);
+          // Cache null on parse error to prevent repeated attempts for invalid data
+          setCache(cacheKey, null, 60);
+          return { key, definition: null };
+        }
       })
     );
 
@@ -340,12 +376,32 @@ export async function triggerUpsellActions(
       return { clientSideActions: [] };
     }
 
-    // 4. Fetch Action Definitions (using siteId prefix)
-    const actionDefinitions: { key: string; definition: ActionDefinition | null }[] = await Promise.all(
+    // 4. Fetch Action Definitions (using siteId prefix and cache)
+    const actionDefinitions: { key: string; definition: ActionDefinition | null | undefined }[] = await Promise.all(
       actionKeys.map(async (key) => {
         const definitionKey = `${siteId}_${key}`; // e.g., esther_action_FacebookUpsell
+        const cacheKey = `actionDef_${definitionKey}`;
+        let definition: ActionDefinition | null | undefined = getCache<ActionDefinition>(cacheKey);
+
+        if (definition !== undefined) { // Check cache first (undefined means not cached or expired)
+          console.log(`Cache hit for action definition: ${cacheKey}`);
+          return { key, definition };
+        }
+
+        console.log(`Cache miss for action definition: ${cacheKey}. Fetching from KV.`);
         const definitionStr = await env.PIXEL_CONFIG.get(definitionKey);
-        return { key, definition: definitionStr ? JSON.parse(definitionStr) : null };
+         try {
+          definition = definitionStr ? JSON.parse(definitionStr) : null;
+          // Cache the result (even if null) for 60 seconds
+          setCache(cacheKey, definition, 60);
+          console.log(`Cached action definition for: ${cacheKey}`);
+          return { key, definition };
+        } catch (parseError: any) {
+          console.error(`Failed to parse action definition JSON for key '${definitionKey}'. Value: ${definitionStr}. Error: ${parseError.message}`);
+          // Cache null on parse error to prevent repeated attempts for invalid data
+          setCache(cacheKey, null, 60);
+          return { key, definition: null };
+        }
       })
     );
 

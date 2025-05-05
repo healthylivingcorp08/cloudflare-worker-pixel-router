@@ -106,7 +106,7 @@ export async function callStickyNewOrder(baseUrl: string, payload: any, env: Env
 export async function callStickyUpsell(baseUrl: string, payload: any, env: Env, gatewayId?: string | number): Promise<any> {
     const finalPayload = { ...payload };
     if (gatewayId !== undefined) {
-        finalPayload.gateway_id = gatewayId;
+        finalPayload.gatewayId = gatewayId; // Correctly map to gatewayId for the API call
     }
     return callStickyApi(baseUrl, 'new_upsell', finalPayload, env, 'POST');
 }
