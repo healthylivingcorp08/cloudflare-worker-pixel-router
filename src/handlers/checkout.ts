@@ -1,3 +1,4 @@
+import { STICKY_URL_MAP } from '../config'; // Added import
 import { Env, PixelState, PaymentData, StickyPayload, EncryptedData } from '../types';
 import { ExecutionContext } from '@cloudflare/workers-types';
 import { addCorsHeaders } from '../middleware/cors';
@@ -26,6 +27,22 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
 
     try {
         console.log('[CheckoutHandler] Received request');
+
+        // --- Sticky URL ID Handling ---
+        const stickyUrlId = request.headers.get('X-Sticky-Url-Id');
+        if (!stickyUrlId) {
+            console.error('[CheckoutHandler] Missing X-Sticky-Url-Id header');
+            return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Missing Sticky URL identifier header.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
+        }
+
+        const stickyBaseUrl = STICKY_URL_MAP[stickyUrlId]; // Get the URL string directly
+        if (!stickyBaseUrl) { // Check if the lookup was successful
+            console.error(`[CheckoutHandler] Invalid or missing Sticky Base URL for ID: ${stickyUrlId}`);
+            return addCorsHeaders(new Response(JSON.stringify({ success: false, message: `Invalid Sticky URL identifier: ${stickyUrlId}` }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
+        }
+        console.log(`[CheckoutHandler] Using Sticky Base URL: ${stickyBaseUrl} for ID: ${stickyUrlId}`);
+        // --- End Sticky URL ID Handling ---
+
         // Use 'any' for flexibility, assuming frontend sends expected structure
         const requestBody = await request.json() as any;
         const { internal_txn_id, targetCampaignId, paymentMethod, ...checkoutPayload } = requestBody;
@@ -240,10 +257,12 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
         console.log('[CheckoutHandler] Final payloadToSend to Sticky:', JSON.stringify(payloadToSend, null, 2)); // Pretty print
 
         // 5. Call Sticky.io NewOrder API
-        const stickyResponse = await callStickyNewOrder(payloadToSend, env);
+        // Pass the resolved stickyBaseUrl
+        const stickyResponse = await callStickyNewOrder(stickyBaseUrl, payloadToSend, env);
 
         // 6. Handle Sticky.io Response
         const stickyOrderId = stickyResponse.order_id;
+        const gatewayId = stickyResponse.gateway_id; // Extract gateway_id
 
         if (stickyOrderId && state) { // Check if state is not null
             state.stickyOrderId_Initial = String(stickyOrderId);
@@ -254,26 +273,24 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
 
         if (stickyResponse.response_code === '100') {
             // --- SUCCESS ---
-            console.log(`[CheckoutHandler] Sticky.io NewOrder SUCCESS for ${internal_txn_id}, Order ID: ${stickyOrderId}`);
+            console.log(`[CheckoutHandler] Sticky.io NewOrder SUCCESS for ${internal_txn_id}, Order ID: ${stickyOrderId}, Gateway ID: ${gatewayId}`); // Log gatewayId
             const triggerResultPromise = triggerInitialActions(internal_txn_id, stickyResponse, env, ctx, request);
             ctx.waitUntil(triggerResultPromise);
             const triggerResult = await triggerResultPromise;
 
-            // Ensure the correct orderId is returned in the response
+            // Ensure the correct orderId and gatewayId are returned in the response
             const successResponse = {
                 success: true,
                 orderId: String(stickyOrderId), // Use the variable holding the ID from Sticky
+                gatewayId: gatewayId, // Include gateway_id in the response
                 clientSideActions: triggerResult.clientSideActions || []
                 // Add other necessary fields from stickyResponse if needed by frontend context
-                // Example: shippingId, ipAddress, campaignId (might be redundant if already in context)
-                // shippingId: stickyResponse.shipping_id, // Adjust field name based on actual Sticky response
-                // ipAddress: ipAddress, // Already have this
-                // campaignId: targetCampaignId, // Already have this
             };
             return addCorsHeaders(new Response(JSON.stringify(successResponse), { status: 200, headers: { 'Content-Type': 'application/json' } }), request);
 
         } else if (determinedPaymentMethod === 'paypal' && stickyResponse.gateway_response?.redirect_url) {
             // --- PAYPAL REDIRECT ---
+            // Note: gateway_id might not be present on redirect, handle appropriately if needed later
             const redirectUrl = stickyResponse.gateway_response.redirect_url;
             console.log(`[CheckoutHandler] Sticky.io PayPal REDIRECT for ${internal_txn_id} to: ${redirectUrl}`);
             if (state) { // Check if state is not null
@@ -287,12 +304,14 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             const redirectResponse = {
                 success: true,
                 redirectUrl: redirectUrl,
-                orderId: stickyOrderId
+                orderId: stickyOrderId,
+                gatewayId: gatewayId // Include gateway_id if available, might be null/undefined
             };
             return addCorsHeaders(new Response(JSON.stringify(redirectResponse), { status: 200, headers: { 'Content-Type': 'application/json' } }), request);
 
         } else {
             // --- FAILURE ---
+            // Note: gateway_id might not be present on failure, handle appropriately if needed later
             const errorMessage = stickyResponse.error_message || stickyResponse.decline_reason || 'Unknown Sticky.io error';
             console.error(`[CheckoutHandler] Sticky.io NewOrder FAILED for ${internal_txn_id}: ${errorMessage}`, stickyResponse);
             if (state) { // Check if state is not null
@@ -306,7 +325,8 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             const errorResponse = {
                 success: false,
                 message: `Payment failed: ${errorMessage}`,
-                details: stickyResponse
+                details: stickyResponse,
+                gatewayId: gatewayId // Include gateway_id if available, might be null/undefined
             };
             const status = (stickyResponse._status >= 500 || !stickyResponse._ok) ? 502 : 400;
             return addCorsHeaders(new Response(JSON.stringify(errorResponse), { status: status, headers: { 'Content-Type': 'application/json' } }), request);

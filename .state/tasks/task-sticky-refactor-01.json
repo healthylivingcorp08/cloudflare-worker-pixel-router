@@ -1,0 +1,27 @@
+{
+  "taskId": "task-sticky-refactor-01",
+  "type": "refactor",
+  "status": "Pending",
+  "assignedTo": null,
+  "dependsOn": [],
+  "description_summary": "Refactor src/lib/sticky.ts to accept stickyBaseUrl dynamically.",
+  "description_detailed": "Modify functions in `src/lib/sticky.ts` that currently use the hardcoded `stickyBaseUrl` constant. These functions should instead accept the base URL as a parameter. Identify all relevant functions (e.g., `newOrder`, `get_order_details`, etc.).",
+  "context": {
+    "relevantFiles": [
+      "src/lib/sticky.ts"
+    ],
+    "reasoning": "The core logic for Sticky.io API interaction resides here and needs modification to remove the hardcoded URL.",
+    "additionalInfo": "The constant `stickyBaseUrl` needs to be removed or its usage replaced."
+  },
+  "acceptanceCriteria": [
+    "The hardcoded `stickyBaseUrl` constant is removed or no longer directly used by API call functions in src/lib/sticky.ts.",
+    "Functions making calls to the Sticky.io API accept a `baseUrl: string` parameter.",
+    "Existing unit tests for `src/lib/sticky.ts` (if any) are updated and pass."
+  ],
+  "history": [
+    {
+      "timestamp": "2025-04-29T20:32:26-07:00",
+      "event": "Task created by Strategic Planner."
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "taskId": "task-sticky-kv-fetch-08",
+  "type": "refactor",
+  "status": "Pending",
+  "assignedTo": null,
+  "dependsOn": [
+    "task-sticky-kv-populate-07"
+  ],
+  "description_summary": "Modify handlers to fetch stickyBaseUrl from KV based on siteId.",
+  "description_detailed": "Identify the request handlers (e.g., in `src/handlers/checkout.ts`, `src/handlers/orderDetails.ts`, `src/handlers/upsell.ts`) that need to interact with the Sticky.io API. Modify these handlers to:\n1. Determine the `siteId` (likely from the request body, path, or existing configuration context).\n2. Construct the KV key using the pattern defined in the previous task (e.g., `${siteId}_stickyBaseUrl`).\n3. Fetch the base URL value from the appropriate KV namespace (likely `env.PIXEL_CONFIG`) using the constructed key.\n4. Handle potential errors gracefully (e.g., key not found, KV read error). Provide a sensible default URL or throw an error if the URL is critical.",
+  "context": {
+    "relevantFiles": [
+      "src/handlers/checkout.ts",
+      "src/handlers/orderDetails.ts",
+      "src/handlers/upsell.ts",
+      "src/index.ts",
+      "src/router.ts",
+      "src/config.ts",
+      "wrangler.toml"
+    ],
+    "reasoning": "This task implements the core logic to retrieve the site-specific Sticky.io base URL from Cloudflare KV during request processing.",
+    "additionalInfo": "Access to the KV namespace binding (defined in wrangler.toml and available via the `env` object in the worker) is required. The exact handlers needing modification depend on where Sticky.io API calls are initiated."
+  },
+  "acceptanceCriteria": [
+    "Relevant request handlers correctly determine the `siteId` for the current request.",
+    "Handlers construct the correct KV key (e.g., `{siteId}_stickyBaseUrl`).",
+    "Handlers attempt to fetch the value from the correct KV namespace.",
+    "KV read errors or missing keys are handled appropriately (e.g., logging, using a default, throwing an error).",
+    "The fetched (or default) `stickyBaseUrl` is available within the handler's scope."
+  ],
+  "history": [
+    {
+      "timestamp": "2025-04-29T20:50:06-07:00",
+      "event": "Task created by Strategic Planner during replanning to use KV."
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "taskId": "task-sticky-revert-06",
+  "type": "chore",
+  "status": "Pending",
+  "assignedTo": null,
+  "dependsOn": [],
+  "description_summary": "Revert incorrect changes made in task-sticky-config-02 (src/types.ts, config/*).",
+  "description_detailed": "Revert the changes made to `src/types.ts` (removing `stickyBaseUrl` from `SiteConfig` interface) and the `config/` directory (`site_template.json`, `sites/drivebright.json`, `sites/siteA.json`) during the erroneous execution of task-sticky-config-02. These files should be returned to their state before that task was run.",
+  "context": {
+    "relevantFiles": [
+      "src/types.ts",
+      "config/site_template.json",
+      "config/sites/drivebright.json",
+      "config/sites/siteA.json"
+    ],
+    "reasoning": "The previous task made incorrect changes based on a misunderstanding of how site configuration is handled. These changes need to be undone before proceeding with the correct KV-based approach.",
+    "additionalInfo": "The goal is to clean up the codebase from the incorrect file-based configuration attempt."
+  },
+  "acceptanceCriteria": [
+    "The `stickyBaseUrl` field is removed from the `SiteConfig` interface in `src/types.ts`.",
+    "The `stickyBaseUrl` field is removed from `config/site_template.json`.",
+    "The `stickyBaseUrl` field is removed from `config/sites/drivebright.json`.",
+    "The `stickyBaseUrl` field is removed from `config/sites/siteA.json`."
+  ],
+  "history": [
+    {
+      "timestamp": "2025-04-29T20:49:28-07:00",
+      "event": "Task created by Strategic Planner during replanning to use KV."
+    }
+  ]
+}

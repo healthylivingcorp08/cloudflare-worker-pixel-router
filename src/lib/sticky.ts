@@ -4,8 +4,7 @@ import { Env } from '../types'; // Assuming types are in ../types
  * Generic helper function to call Sticky.io API endpoints.
  * Handles authentication, request construction, basic response parsing, and timeout.
  */
-async function callStickyApi(endpoint: string, payload: any, env: Env, method: string = 'POST', timeoutMs: number = 10000): Promise<any> { // Added timeout parameter
-    const stickyBaseUrl = "https://techcommerceunlimited.sticky.io/api/v1"; // Hardcoded API URL
+async function callStickyApi(baseUrl: string, endpoint: string, payload: any, env: Env, method: string = 'POST', timeoutMs: number = 10000): Promise<any> { // Added baseUrl parameter, timeout parameter
     const stickyApiUser = env.STICKY_USERNAME;
     const stickyApiPass = env.STICKY_PASSWORD;
 
@@ -13,8 +12,12 @@ async function callStickyApi(endpoint: string, payload: any, env: Env, method: s
         console.error('[StickyLib] Sticky.io credentials missing in environment secrets.');
         throw new Error('Sticky.io API credentials missing');
     }
+    if (!baseUrl) {
+        console.error('[StickyLib] Sticky.io base URL missing.');
+        throw new Error('Sticky.io base URL missing');
+    }
 
-    const cleanBaseUrl = stickyBaseUrl.endsWith('/') ? stickyBaseUrl.slice(0, -1) : stickyBaseUrl;
+    const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
     const cleanEndpoint = endpoint.startsWith('/') ? endpoint.slice(1) : endpoint;
     const stickyUrl = `${cleanBaseUrl}/${cleanEndpoint}`;
 
@@ -93,26 +96,30 @@ async function callStickyApi(endpoint: string, payload: any, env: Env, method: s
 /**
  * Calls the Sticky.io 'new_order' endpoint.
  */
-export async function callStickyNewOrder(payload: any, env: Env): Promise<any> {
-    return callStickyApi('new_order', payload, env, 'POST');
+export async function callStickyNewOrder(baseUrl: string, payload: any, env: Env): Promise<any> {
+    return callStickyApi(baseUrl, 'new_order', payload, env, 'POST');
 }
 
 /**
  * Calls the Sticky.io 'new_upsell' endpoint.
  */
-export async function callStickyUpsell(payload: any, env: Env): Promise<any> {
-    return callStickyApi('new_upsell', payload, env, 'POST');
+export async function callStickyUpsell(baseUrl: string, payload: any, env: Env, gatewayId?: string | number): Promise<any> {
+    const finalPayload = { ...payload };
+    if (gatewayId !== undefined) {
+        finalPayload.gateway_id = gatewayId;
+    }
+    return callStickyApi(baseUrl, 'new_upsell', finalPayload, env, 'POST');
 }
 
 /**
  * Calls the Sticky.io 'order_view' endpoint.
  */
-export async function callStickyOrderView(orderIds: string[], env: Env): Promise<any> {
+export async function callStickyOrderView(baseUrl: string, orderIds: string[], env: Env): Promise<any> {
     console.log('[StickyLib] Preparing order_view request for order IDs:', orderIds);
     const payload = { order_id: orderIds };
     console.log('[StickyLib] order_view payload:', JSON.stringify(payload));
     // Using default 10-second timeout for order_view
-    const result = await callStickyApi('order_view', payload, env, 'POST');
+    const result = await callStickyApi(baseUrl, 'order_view', payload, env, 'POST');
     console.log('[StickyLib] order_view result:', JSON.stringify(result));
     return result;
 }

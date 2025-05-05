@@ -2,7 +2,6 @@ import { Env, ExtendedOrderConfirmation, Product, Address } from '../types'; // 
 import { ExecutionContext } from '@cloudflare/workers-types';
 import { addCorsHeaders } from '../middleware/cors';
 import { callStickyOrderView } from '../lib/sticky'; // Import the Sticky.io library function
-import { getDefaultProductPrice } from '../utils/productPrices';
 
 /**
  * Handles POST requests to /api/order-details.
@@ -22,8 +21,14 @@ export async function handleOrderDetails(request: Request, env: Env, ctx: Execut
 
     console.log(`[OrderDetailsHandler] Fetching order details for orderId: ${orderIdStr}`);
 
+    // --- 0. Check for required environment variables ---
+    if (!env.STICKY_API_URL) {
+        console.error('[OrderDetailsHandler] STICKY_API_URL environment variable is not set.');
+        return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Server configuration error: Sticky.io API URL is missing.' }), { status: 500, headers: { 'Content-Type': 'application/json' } }), request);
+    }
+
     // --- 1. Call Sticky.io API using the library function ---
-    const stickyResponse = await callStickyOrderView([orderIdStr], env); // Pass order ID as an array
+    const stickyResponse = await callStickyOrderView(env.STICKY_API_URL, [orderIdStr], env); // Pass order ID as an array
 
     console.log(`[OrderDetailsHandler] Sticky.io Order View Response Status: ${stickyResponse._status}`);
     console.log(`[OrderDetailsHandler] Sticky.io Order View Response Body: ${JSON.stringify(stickyResponse)}`);
@@ -62,14 +67,9 @@ export async function handleOrderDetails(request: Request, env: Env, ctx: Execut
           }
           
           // If still 0, use default price from product config
+          // Fallback logic removed as getDefaultProductPrice is deprecated
           if (price === 0) {
-            const defaultPrice = getDefaultProductPrice(item.product_id);
-            if (defaultPrice > 0) {
-              price = defaultPrice;
-              console.warn(`[OrderDetailsHandler] Using default price ${defaultPrice} for product ${item.product_id}`);
-            } else {
-              console.error(`[OrderDetailsHandler] No valid price found for product ${item.product_id}`);
-            }
+             console.error(`[OrderDetailsHandler] No valid price found for product ${item.product_id} after checking price, discountPrice, priceRate, regPrice, and orderTotal split.`);
           }
           
           return price;

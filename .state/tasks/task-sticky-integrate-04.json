@@ -1,0 +1,36 @@
+{
+  "taskId": "task-sticky-integrate-04",
+  "type": "refactor",
+  "status": "Pending",
+  "assignedTo": null,
+  "dependsOn": [
+    "task-sticky-refactor-01",
+    "task-sticky-loading-03"
+  ],
+  "description_summary": "Pass the dynamic stickyBaseUrl to relevant functions in src/lib/sticky.ts.",
+  "description_detailed": "Identify the parts of the codebase (request handlers, routers, etc.) that currently invoke functions from `src/lib/sticky.ts`. Modify these invocation points to retrieve the site-specific `stickyBaseUrl` from the loaded configuration (updated in task-sticky-loading-03) and pass it as an argument to the refactored `sticky.ts` functions (updated in task-sticky-refactor-01).",
+  "context": {
+    "relevantFiles": [
+      "src/index.ts",
+      "src/router.ts",
+      "src/handlers/checkout.ts",
+      "src/handlers/orderDetails.ts",
+      "src/handlers/upsell.ts",
+      "src/lib/sticky.ts",
+      "src/config.ts"
+    ],
+    "reasoning": "This task integrates the configuration changes and the library refactoring, ensuring the correct, site-specific base URL is used for API calls.",
+    "additionalInfo": "The specific handlers needing updates depend on where Sticky.io API calls are initiated (e.g., checkout, order lookup, upsell processing)."
+  },
+  "acceptanceCriteria": [
+    "Code sections calling functions in `src/lib/sticky.ts` correctly retrieve the `stickyBaseUrl` from the site's configuration.",
+    "The retrieved `stickyBaseUrl` is passed as an argument to the corresponding `sticky.ts` functions.",
+    "The application functions correctly, making API calls to the site-specific Sticky.io endpoints."
+  ],
+  "history": [
+    {
+      "timestamp": "2025-04-29T20:33:23-07:00",
+      "event": "Task created by Strategic Planner."
+    }
+  ]
+}

@@ -1,14 +1,14 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { SitesConfig, SiteConfig } from '../src/types'; // Assuming types are correctly exported
+import { SiteConfig } from '../src/types'; // Assuming types are correctly exported
 
 // Define the path to the main configuration file relative to the script location
 // Adjust this path if your config file is located elsewhere in the monorepo
 const CONFIG_FILE_PATH = path.resolve(__dirname, '../config/sites.json');
 const KV_NAMESPACE_BINDING = 'PIXEL_CONFIG'; // Match the binding in wrangler.toml
 
-function loadConfigFromFile(filePath: string): SitesConfig {
+function loadConfigFromFile(filePath: string): Record<string, SiteConfig> {
   try {
     const rawData = fs.readFileSync(filePath, 'utf-8');
     const config = JSON.parse(rawData);
@@ -17,7 +17,7 @@ function loadConfigFromFile(filePath: string): SitesConfig {
       throw new Error('Invalid format: root should be an object.');
     }
     // Add more validation based on SitesConfig structure if needed
-    return config as SitesConfig; // Return the loaded config here
+    return config as Record<string, SiteConfig>; // Return the loaded config here
   } catch (error: any) {
     console.error(`Error reading or parsing config file at ${filePath}:`, error.message);
     process.exit(1);
@@ -42,7 +42,21 @@ function syncSiteConfigToKV(siteId: string, siteConfig: SiteConfig): void {
 
     execSync(command, { stdio: 'inherit' });
 
-    console.log(`Successfully synced config for ${siteId} to KV.`);
+    console.log(`Successfully synced main config object for ${siteId} to KV.`);
+
+    // --- Sync stickyBaseUrl separately if it exists ---
+    if (siteConfig.stickyBaseUrl) {
+      const stickyKey = `${siteId}_stickyBaseUrl`;
+      const stickyValue = siteConfig.stickyBaseUrl;
+      // No need to escape quotes here as we are passing the value directly
+      const stickyCommand = `wrangler kv:key put --binding=${KV_NAMESPACE_BINDING} "${stickyKey}" "${stickyValue}"`;
+
+      console.log(`Syncing stickyBaseUrl for site: ${siteId}`);
+      console.log(`KV Key: ${stickyKey}`);
+      execSync(stickyCommand, { stdio: 'inherit' });
+      console.log(`Successfully synced stickyBaseUrl for ${siteId} to KV.`);
+    }
+    // --- End stickyBaseUrl sync ---
 
   } catch (error) {
     console.error(`\nFailed to sync config for site ${siteId} to KV:`, error);
@@ -64,7 +78,8 @@ function main() {
     // if (!siteConfig.siteId) {
     //   siteConfig.siteId = siteId;
     // }
-    syncSiteConfigToKV(siteId, siteConfig);
+    // Cast siteConfig to SiteConfig to resolve the type error
+    syncSiteConfigToKV(siteId, siteConfig as SiteConfig);
   }
 
   console.log('\nKV configuration sync finished.');

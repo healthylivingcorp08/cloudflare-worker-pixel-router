@@ -1,0 +1,30 @@
+{
+  "taskId": "task-sticky-loading-03",
+  "type": "refactor",
+  "status": "Pending",
+  "assignedTo": null,
+  "dependsOn": [
+    "task-sticky-config-02"
+  ],
+  "description_summary": "Update config loading logic (src/config.ts?) to read stickyBaseUrl.",
+  "description_detailed": "Modify the code responsible for loading and parsing site configuration files (likely within `src/config.ts` or related modules). Ensure that the `stickyBaseUrl` field added in the previous task is correctly read from the JSON files and included in the resulting site configuration object used by the application.",
+  "context": {
+    "relevantFiles": [
+      "src/config.ts",
+      "src/types.ts"
+    ],
+    "reasoning": "This task connects the configuration file changes to the application's runtime configuration state.",
+    "additionalInfo": "The exact implementation depends on how configurations are currently loaded (e.g., reading files directly, using a library). The loaded configuration object should now expose the `stickyBaseUrl`."
+  },
+  "acceptanceCriteria": [
+    "The configuration loading mechanism successfully reads the `stickyBaseUrl` from site JSON files.",
+    "The in-memory representation of a site's configuration includes the `stickyBaseUrl` value.",
+    "The code compiles without type errors related to the new configuration field."
+  ],
+  "history": [
+    {
+      "timestamp": "2025-04-29T20:33:01-07:00",
+      "event": "Task created by Strategic Planner."
+    }
+  ]
+}

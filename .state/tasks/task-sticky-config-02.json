@@ -1,0 +1,31 @@
+{
+  "taskId": "task-sticky-config-02",
+  "type": "chore",
+  "status": "Pending",
+  "assignedTo": null,
+  "dependsOn": [],
+  "description_summary": "Add stickyBaseUrl field to site config schema and files (config/sites/*.json).",
+  "description_detailed": "Define the `stickyBaseUrl` field (string, required) in the TypeScript interface/type used for site configurations (likely in `src/types.ts` or `src/config.ts`). Update the template file (`config/site_template.json`) and all existing site configuration files (`config/sites/*.json`) to include this new field with the appropriate URL for each site. If the specific URLs are unknown, use a placeholder like 'https://YOUR_SITE.sticky.io/api/v1'.",
+  "context": {
+    "relevantFiles": [
+      "src/types.ts",
+      "src/config.ts",
+      "config/site_template.json",
+      "config/sites/drivebright.json",
+      "config/sites/siteA.json"
+    ],
+    "reasoning": "This task establishes the data structure within the configuration files for storing the site-specific Sticky.io base URL.",
+    "additionalInfo": "The exact TypeScript file defining the site config structure needs confirmation (likely `src/types.ts` or `src/config.ts`). The actual base URLs for 'drivebright' and 'siteA' might need to be determined or placeholders used initially."
+  },
+  "acceptanceCriteria": [
+    "The relevant TypeScript interface/type for site configuration includes a mandatory `stickyBaseUrl: string` field.",
+    "The `config/site_template.json` file includes the `stickyBaseUrl` field.",
+    "All existing site configuration files in `config/sites/` (e.g., `drivebright.json`, `siteA.json`) are updated to include the `stickyBaseUrl` field with either a correct URL or a placeholder."
+  ],
+  "history": [
+    {
+      "timestamp": "2025-04-29T20:32:44-07:00",
+      "event": "Task created by Strategic Planner."
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { SiteConfig, SitesConfig, Env, PageConfig, PixelConfig, ApiEndpointConfig } from './types';
+import { SiteConfig, Env, PageConfig, PixelConfig, ApiEndpointConfig } from './types';
 
 /**
  * Map of hostnames to site IDs
@@ -7,6 +7,15 @@ const HOST_TO_SITE_MAP: { [hostname: string]: string } = {
   'getamplihear.com': 'siteA',
   'drivebright.com': 'drivebright'
   // Add more mappings as needed
+};
+
+/**
+ * Map of Sticky.io URL identifiers to base URLs
+ */
+export const STICKY_URL_MAP: Record<string, string> = {
+  '1': 'https://techcommerceunlimited.sticky.io/api/v1', // drivebright
+  '2': 'URL_FOR_CODE_CLOUDS_PLACEHOLDER', // TODO: Replace with actual URL
+  '3': 'URL_FOR_X_PLACEHOLDER',         // TODO: Replace with actual URL
 };
 
 /**
@@ -62,12 +71,12 @@ function isSiteConfig(obj: any): obj is SiteConfig {
 function getSiteIdFromHostname(hostname: string): string {
   // Remove 'www.' if present and convert to lowercase
   const cleanHostname = hostname.replace(/^www\./i, '').toLowerCase();
-  
+
   const siteId = HOST_TO_SITE_MAP[cleanHostname];
   if (!siteId) {
     throw new Error(`No site configuration found for hostname: ${hostname}`);
   }
-  
+
   return siteId;
 }
 
@@ -81,12 +90,19 @@ async function loadSiteConfig(siteId: string, env: Env): Promise<SiteConfig> {
     // Define keys based on the granular structure
     const scrubPercentKey = `${siteId}_rule_scrubPercent`;
     const pageRulesKey = `${siteId}_rule_pageRules`;
+    const domainKey = `${siteId}_domain`;
 
     // Fetch values concurrently
-    const [scrubPercentStr, pageRulesStr] = await Promise.all([
+    const [scrubPercentStr, pageRulesStr, domainStr] = await Promise.all([
       env.PIXEL_CONFIG.get(scrubPercentKey),
-      env.PIXEL_CONFIG.get(pageRulesKey)
+      env.PIXEL_CONFIG.get(pageRulesKey),
+      env.PIXEL_CONFIG.get(domainKey)
     ]);
+
+    // Validate domain
+    if (domainStr === null) {
+      throw new Error(`Domain config not found for site: ${siteId}`);
+    }
 
     // Validate scrubPercent
     if (scrubPercentStr === null) {
@@ -123,6 +139,7 @@ async function loadSiteConfig(siteId: string, env: Env): Promise<SiteConfig> {
     // Construct the SiteConfig object
     const siteConfig: SiteConfig = {
       siteId: siteId, // Add siteId to the config object
+      domain: domainStr,
       scrubPercent: scrubPercent,
       pages: pages
     };

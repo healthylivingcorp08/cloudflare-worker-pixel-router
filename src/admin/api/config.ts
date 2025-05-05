@@ -7,7 +7,7 @@ import {
   PageConfig
 } from '../types';
 import { successResponse, errorResponse, requirePermission } from '../middleware/auth';
-import siteTemplate from '../../../config/site_template.json'; // Import the template
+import siteTemplate from '../../../docs/examples/site_template.json'; // Import the template
 
 /**
  * List available sites

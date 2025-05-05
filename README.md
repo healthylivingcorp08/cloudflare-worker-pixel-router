@@ -181,6 +181,7 @@ This endpoint determines which pixels/actions should be executed on a given fron
 *   `${siteId}_rule_pageRules`: Array of `{ pattern: string, type: string }`
 *   `${siteId}_rule_${pageType}AffIdRules`: Array of `{ affId: string, actions: string[] }`
 *   `${siteId}_action_${actionName}`: JSON object defining the action (type, scriptSrc, params with `PARAM:` placeholders).
+*   `${siteId}_stickyBaseUrl`: String containing the base URL for the Sticky.io API for that site.
 *   *(Potentially others for checkout, campaign IDs, etc.)*
 
 **Local KV Population:**

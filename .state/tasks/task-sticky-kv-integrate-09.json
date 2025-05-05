@@ -1,0 +1,33 @@
+{
+  "taskId": "task-sticky-kv-integrate-09",
+  "type": "refactor",
+  "status": "Pending",
+  "assignedTo": null,
+  "dependsOn": [
+    "task-sticky-refactor-01",
+    "task-sticky-kv-fetch-08"
+  ],
+  "description_summary": "Pass stickyBaseUrl fetched from KV to src/lib/sticky.ts functions.",
+  "description_detailed": "In the request handlers modified in the previous task (`task-sticky-kv-fetch-08`), take the `stickyBaseUrl` value obtained from KV and pass it as the `baseUrl` argument when calling the refactored functions in `src/lib/sticky.ts` (which were updated in `task-sticky-refactor-01`). Ensure the correct URL is passed for each API call.",
+  "context": {
+    "relevantFiles": [
+      "src/handlers/checkout.ts",
+      "src/handlers/orderDetails.ts",
+      "src/handlers/upsell.ts",
+      "src/lib/sticky.ts"
+    ],
+    "reasoning": "This task connects the KV fetching logic with the refactored Sticky.io library functions, completing the dynamic URL integration.",
+    "additionalInfo": "This step assumes `task-sticky-refactor-01` (making sticky.ts functions accept baseUrl) and `task-sticky-kv-fetch-08` (fetching the URL from KV in handlers) are complete."
+  },
+  "acceptanceCriteria": [
+    "Request handlers modified in `task-sticky-kv-fetch-08` correctly pass the fetched `stickyBaseUrl` to the appropriate functions in `src/lib/sticky.ts`.",
+    "Calls to `src/lib/sticky.ts` functions use the dynamically fetched URL, not a hardcoded one.",
+    "The application functions correctly, making API calls to the site-specific Sticky.io endpoints retrieved from KV."
+  ],
+  "history": [
+    {
+      "timestamp": "2025-04-29T20:50:32-07:00",
+      "event": "Task created by Strategic Planner during replanning to use KV."
+    }
+  ]
+}

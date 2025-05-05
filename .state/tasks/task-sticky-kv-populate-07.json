@@ -1,0 +1,32 @@
+{
+  "taskId": "task-sticky-kv-populate-07",
+  "type": "chore",
+  "status": "Pending",
+  "assignedTo": null,
+  "dependsOn": [
+    "task-sticky-revert-06"
+  ],
+  "description_summary": "Define KV key ({siteId}_stickyBaseUrl) and update population/management methods.",
+  "description_detailed": "Define the standard KV key pattern for storing the Sticky.io base URL, recommended pattern: `{siteId}_stickyBaseUrl`. Update relevant KV population scripts (e.g., `scripts/populate-local-kv.sh`, `scripts/sync-kv-configs.ts`) to include this new key with appropriate placeholder or actual values for known sites (e.g., `drivebright_stickyBaseUrl`). Ensure consistency with existing KV key naming conventions documented in README.md.",
+  "context": {
+    "relevantFiles": [
+      "scripts/populate-local-kv.sh",
+      "scripts/sync-kv-configs.ts",
+      "src/admin/api/kv.ts",
+      "README.md"
+    ],
+    "reasoning": "This task establishes the data storage mechanism in Cloudflare KV and ensures it can be populated for local development and deployment.",
+    "additionalInfo": "The specific population script(s) needing modification should be confirmed. Consider adding this key pattern to the KV structure documentation in README.md."
+  },
+  "acceptanceCriteria": [
+    "The KV key pattern `{siteId}_stickyBaseUrl` is adopted and documented (e.g., in README.md or memory-bank/systemPatterns.md).",
+    "Relevant KV population scripts (e.g., `scripts/populate-local-kv.sh`) are updated to include example entries for `{siteId}_stickyBaseUrl` for known sites.",
+    "The population scripts run successfully."
+  ],
+  "history": [
+    {
+      "timestamp": "2025-04-29T20:49:40-07:00",
+      "event": "Task created by Strategic Planner during replanning to use KV."
+    }
+  ]
+}

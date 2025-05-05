@@ -1,0 +1,33 @@
+{
+  "taskId": "task-sticky-kv-docs-10",
+  "type": "documentation-update",
+  "status": "Pending",
+  "assignedTo": null,
+  "dependsOn": [
+    "task-sticky-kv-integrate-09"
+  ],
+  "description_summary": "Update documentation for KV-based stickyBaseUrl configuration.",
+  "description_detailed": "Update relevant project documentation (e.g., README.md, memory-bank/systemPatterns.md, potentially comments in handlers or KV population scripts) to reflect that the Sticky.io base URL is now configured per-site using Cloudflare KV. Explain the KV key pattern (`{siteId}_stickyBaseUrl`), how it's fetched, and how to manage its value (e.g., via population scripts or admin UI if applicable). Remove any outdated documentation referring to file-based configuration for this URL.",
+  "context": {
+    "relevantFiles": [
+      "README.md",
+      "memory-bank/systemPatterns.md",
+      "scripts/populate-local-kv.sh",
+      "src/handlers/checkout.ts"
+    ],
+    "reasoning": "Documentation needs to accurately reflect the new KV-based approach for configuring the Sticky.io base URL.",
+    "additionalInfo": "Ensure the KV structure section in README.md is updated or a new entry is added for `{siteId}_stickyBaseUrl`."
+  },
+  "acceptanceCriteria": [
+    "The README.md section on Configuration or KV Structure explains the `{siteId}_stickyBaseUrl` key.",
+    "Outdated documentation referring to file-based `stickyBaseUrl` configuration is removed or updated.",
+    "Other relevant documentation files (like systemPatterns.md or script comments) are updated if necessary.",
+    "The documentation clearly explains that `stickyBaseUrl` is configured via Cloudflare KV."
+  ],
+  "history": [
+    {
+      "timestamp": "2025-04-29T20:50:51-07:00",
+      "event": "Task created by Strategic Planner during replanning to use KV."
+    }
+  ]
+}

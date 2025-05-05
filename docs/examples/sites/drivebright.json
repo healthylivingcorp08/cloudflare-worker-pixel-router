@@ -1,6 +1,7 @@
 {
   "siteId": "drivebright",
   "scrubPercent": 0.1,
+  "stickyBaseUrl": "https://your-sticky-base-url.com",
   "pages": {
     "checkout": {
       "pixels": [

@@ -1,3 +1,4 @@
+import { STICKY_URL_MAP } from '../config'; // Added import
 import { Env, PixelState, SiteConfig } from '../types'; // Removed StickyPayload import
 import { ExecutionContext } from '@cloudflare/workers-types';
 import { addCorsHeaders } from '../middleware/cors';
@@ -14,14 +15,37 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
     // Try reading header case-insensitively (standard is 'X-Internal-Transaction-Id')
     const internal_txn_id = request.headers.get('X-Internal-Transaction-Id') || request.headers.get('x-internal-transaction-id');
     const ipAddress = request.headers.get('CF-Connecting-IP') || '';
+
+    // --- Sticky URL ID Handling ---
+    const stickyUrlId = request.headers.get('X-Sticky-Url-Id');
+    if (!stickyUrlId) {
+        console.error('[UpsellHandler] Missing X-Sticky-Url-Id header');
+        return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Missing Sticky URL identifier header.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
+    }
+
+    const stickyBaseUrl = STICKY_URL_MAP[stickyUrlId]; // Get the URL string directly
+    if (!stickyBaseUrl) { // Check if the lookup was successful
+        console.error(`[UpsellHandler] Invalid or missing Sticky Base URL for ID: ${stickyUrlId}`);
+        return addCorsHeaders(new Response(JSON.stringify({ success: false, message: `Invalid Sticky URL identifier: ${stickyUrlId}` }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
+    }
+    console.log(`[UpsellHandler] Using Sticky Base URL: ${stickyBaseUrl} for ID: ${stickyUrlId}`);
+    // --- End Sticky URL ID Handling ---
+
     const upsellData = await request.json() as any; // Consider using a specific type from pixel-router-client
-    const { siteId, step, upsellType, offers, shippingId } = upsellData; // Destructure expected body fields
+    // Destructure expected body fields, including gatewayId
+    const { siteId, step, upsellType, offers, shippingId, gatewayId, campaignId } = upsellData;
     if (shippingId === undefined) {
         console.error(`[UpsellHandler] Missing shippingId in request payload`);
         return new Response(JSON.stringify({ success: false, message: 'Missing required field: shippingId' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
+    // Add validation for gatewayId when accepting upsell
+    if (upsellType === 'accept' && gatewayId === undefined) {
+        console.error(`[UpsellHandler] Missing gatewayId in request payload for upsell accept`);
+        return new Response(JSON.stringify({ success: false, message: 'Missing required field: gatewayId' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
 
-    console.log(`[UpsellHandler] Received request for internal_txn_id: ${internal_txn_id}, siteId: ${siteId}, step: ${step}, type: ${upsellType}`);
+
+    console.log(`[UpsellHandler] Received request for internal_txn_id: ${internal_txn_id}, siteId: ${siteId}, step: ${step}, type: ${upsellType}, gatewayId: ${gatewayId}`); // Log gatewayId
     console.log(`[UpsellHandler] DEBUG: Received shippingId from body: ${shippingId}`); // Add log for shippingId
 
     // --- 2. Basic Validation ---
@@ -30,11 +54,13 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
         !siteId && 'siteId',
         !step && 'step',
         !upsellType && 'upsellType',
+        !campaignId && 'campaignId', // Added campaignId validation
     ].filter(Boolean);
 
     const acceptMissing = (upsellType === 'accept') ? [
         !offers && 'offers',
         (shippingId === undefined || shippingId === null) && 'shippingId', // Explicitly check for undefined or null
+        (gatewayId === undefined || gatewayId === null) && 'gatewayId', // Added gatewayId validation for accept
     ].filter(Boolean) : [];
 
     const allMissing = [...baseMissing, ...acceptMissing];
@@ -68,12 +94,8 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
     const stateString = preliminaryStateString;
     const state: PixelState = preliminaryState; // Use the parsed state
 
-    // Get campaignId from request payload
-    if (!upsellData.campaignId) {
-        console.error(`[UpsellHandler] Missing campaignId in request payload`);
-        return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Missing campaignId in request payload' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
-    }
-    const targetUpsellCampaignId = upsellData.campaignId;
+    // Get campaignId from request payload (already destructured and validated)
+    const targetUpsellCampaignId = campaignId; // Use validated campaignId
     console.log(`[UpsellHandler] Using campaignId from request payload: ${targetUpsellCampaignId} (isScrub: ${isScrub})`);
 
     // State parsing already happened above
@@ -137,7 +159,7 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
         shipPrice: offer.shipPrice,
         price: offer.price
       })),
-      // Remove ...trackingParams
+      // gateway_id will be passed as a separate argument to callStickyUpsell
     };
 
     // Remove undefined fields (optional, callStickyApi might handle this)
@@ -155,7 +177,8 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
     // --- 8. Call Sticky.io API using the library function --- // Renumbered step
     // console.log(`[UpsellHandler] Sticky.io Upsell Payload: ${JSON.stringify(payloadToSend)}`); // Avoid logging potentially sensitive data
 
-    const stickyResponse = await callStickyUpsell(payloadToSend, env);
+    // Pass stickyBaseUrl and gatewayId to the updated function
+    const stickyResponse = await callStickyUpsell(stickyBaseUrl, payloadToSend, env, gatewayId);
 
     console.log(`[UpsellHandler] Sticky.io Upsell Response Status for step ${upsellStepNum}: ${stickyResponse._status}`);
 
