@@ -207,6 +207,8 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             utm_content: state.trackingParams?.utm_content,
             utm_term: state.trackingParams?.utm_term,
 
+            preserve_gateway: "1", // Renamed parameter
+ 
             // Add payment fields directly to the payload if it's a card payment
             ...(paymentFieldsForSticky), // Spread payment fields (card or paypal)
             // Add alt_pay_return_url specifically for PayPal, pointing to the upsell page

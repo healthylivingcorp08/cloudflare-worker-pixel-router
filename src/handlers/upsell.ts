@@ -36,19 +36,12 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
     console.log('[UpsellHandler] DEBUG: Received upsellData:', JSON.stringify(upsellData, null, 2));
     // --- END DEBUG ---
     // Destructure expected body fields, including gatewayId and optional forceGatewayId
-    const { siteId, step, upsellType, offers, shippingId, gatewayId, campaignId, forceGatewayId } = upsellData; // Added forceGatewayId
+    const { siteId, step, upsellType, offers, shippingId, gatewayId, campaignId, forceGatewayId, preserve_gateway } = upsellData; // Renamed preserve_force_gateway
     if (shippingId === undefined) {
         console.error(`[UpsellHandler] Missing shippingId in request payload`);
         return new Response(JSON.stringify({ success: false, message: 'Missing required field: shippingId' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
-    // Add validation for gatewayId or forceGatewayId when accepting upsell
-    if (upsellType === 'accept' && gatewayId === undefined && forceGatewayId === undefined) {
-        console.error(`[UpsellHandler] Missing both gatewayId and forceGatewayId in request payload for upsell accept`);
-        return new Response(JSON.stringify({ success: false, message: 'Missing required payment gateway identifier (gatewayId or forceGatewayId)' }), {
-            status: 400,
-            headers: { 'Content-Type': 'application/json' }
-        });
-    }
+    // Validation for gatewayId/forceGatewayId removed as preserve_gateway handles the logic
 
 
     console.log(`[UpsellHandler] Received request for internal_txn_id: ${internal_txn_id}, siteId: ${siteId}, step: ${step}, type: ${upsellType}, gatewayId: ${gatewayId}`); // Log gatewayId
@@ -66,7 +59,7 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
     const acceptMissing = (upsellType === 'accept') ? [
         !offers && 'offers',
         (shippingId === undefined || shippingId === null) && 'shippingId', // Explicitly check for undefined or null
-        (gatewayId === undefined || gatewayId === null) && (forceGatewayId === undefined || forceGatewayId === null) && 'gatewayId or forceGatewayId', // Check for either payment gateway identifier
+        // Removed check for gatewayId/forceGatewayId
     ].filter(Boolean) : [];
 
     const allMissing = [...baseMissing, ...acceptMissing];
@@ -157,6 +150,7 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
       shippingId: String(shippingId), // Use from body
       ipAddress: ipAddress,
       step_num: upsellStepNum, // Use parsed step number
+      // preserve_force_gateway: "1", // Removed hardcoding; control is via finalGatewayId logic below
       offers: offers.map((offer: any) => ({ // Use offers from body
         offer_id: offer.offer_id,
         product_id: offer.product_id,
@@ -191,8 +185,11 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
     // console.log(`[UpsellHandler] Sticky.io Upsell Payload: ${JSON.stringify(payloadToSend)}`); // Avoid logging potentially sensitive data
 
     // Pass stickyBaseUrl and the determined gatewayId (prioritizing forceGatewayId) to the updated function
-    const finalGatewayId = forceGatewayId ?? gatewayId; // Use forceGatewayId if present, otherwise fallback to gatewayId
-    console.log(`[UpsellHandler] Using finalGatewayId: ${finalGatewayId} (forced: ${!!forceGatewayId})`); // Log which gateway is used
+    // Determine the gateway ID to pass. If preserve_gateway is "1", pass undefined. Otherwise, use forceGatewayId or gatewayId.
+    const finalGatewayId = preserve_gateway === "1"
+        ? undefined
+        : forceGatewayId ?? gatewayId;
+    console.log(`[UpsellHandler] Using finalGatewayId: ${finalGatewayId} (preserve_gateway: ${preserve_gateway}, forced: ${!!forceGatewayId})`); // Log which gateway is used and why
     const stickyResponse = await callStickyUpsell(stickyBaseUrl, payloadToSend, env, finalGatewayId);
 
     console.log(`[UpsellHandler] Sticky.io Upsell Response Status for step ${upsellStepNum}: ${stickyResponse._status}`);
