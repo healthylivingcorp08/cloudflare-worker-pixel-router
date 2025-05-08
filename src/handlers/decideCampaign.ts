@@ -85,6 +85,7 @@ export async function handleDecideCampaign(request: Request, env: Env, ctx: Exec
       internal_txn_id: internal_txn_id,
       siteId: siteId, // Add siteId to the state
       timestamp_created: new Date().toISOString(),
+      timestamp_last_updated: new Date().toISOString(),
       status: 'pending',
       trackingParams: { // Store all relevant tracking params explicitly
         affId,
@@ -130,7 +131,7 @@ export async function handleDecideCampaign(request: Request, env: Env, ctx: Exec
     console.log(`[DecideCampaignHandler] Storing initial state to PIXEL_STATE with key: ${kvKey} (async)`);
 
     // 7. Return targetCampaignId
-    const responsePayload = { targetCampaignId: targetCampaignId, internal_txn_id: internal_txn_id }; // Also return txn_id for frontend use
+    const responsePayload = { targetCampaignId: targetCampaignId, campaignId: targetCampaignId, internal_txn_id: internal_txn_id }; // Also return txn_id for frontend use, and campaignId for PayPal
     const response = new Response(JSON.stringify(responsePayload), {
       headers: { 'Content-Type': 'application/json' },
       status: 200

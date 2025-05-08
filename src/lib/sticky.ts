@@ -34,14 +34,31 @@ async function callStickyApi(baseUrl: string, endpoint: string, payload: any, en
     let response: Response | null = null;
     let responseBodyText: string = '';
 
+    const isAlternativePaymentNewOrder = endpoint === 'new_order' &&
+                                   (payload?.creditCardType === 'paypal' || (typeof payload?.alt_pay_token === 'string' && payload.alt_pay_token.length > 0));
+
+    if (isAlternativePaymentNewOrder) {
+        console.log(`[StickyLib] Alternative payment new_order detected for endpoint: ${endpoint}. Modifying headers and response handling.`);
+    }
+
     try {
+        const headersInit: HeadersInit = {
+            'Authorization': 'Basic ' + btoa(`${stickyApiUser}:${stickyApiPass}`),
+        };
+
+        if (method === 'POST' || method === 'PUT') {
+            headersInit['Content-Type'] = 'application/json';
+        }
+
+        // If not an alternative payment new_order, we expect a JSON response and set Accept header.
+        // For alternative payment new_order, we omit 'Accept' to receive HTML from Sticky.io.
+        if (!isAlternativePaymentNewOrder && (method === 'POST' || method === 'PUT' || method === 'GET')) {
+            headersInit['Accept'] = 'application/json';
+        }
+
         response = await fetch(stickyUrl, {
             method: method,
-            headers: {
-                'Authorization': 'Basic ' + btoa(`${stickyApiUser}:${stickyApiPass}`),
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
+            headers: headersInit,
             body: JSON.stringify(payload),
             signal: controller.signal // Pass the abort signal
         });
@@ -51,20 +68,67 @@ async function callStickyApi(baseUrl: string, endpoint: string, payload: any, en
 
         responseBodyText = await response.text();
         console.log(`[StickyLib] Response Status from ${endpoint}:`, response.status);
+        // console.log(`[StickyLib] Raw Response Body from ${endpoint} (isAlternativePaymentNewOrder: ${isAlternativePaymentNewOrder}):`, responseBodyText.substring(0,1000)); // For debugging
 
-        try {
-            const responseJson = JSON.parse(responseBodyText);
-            responseJson._status = response.status;
-            responseJson._ok = response.ok;
-            return responseJson;
-        } catch (parseError) {
-            console.error(`[StickyLib] Failed to parse Sticky.io response JSON from ${endpoint}:`, responseBodyText, parseError);
-            return {
-                _status: response.status,
-                _ok: response.ok,
-                _rawBody: responseBodyText,
-                error_message: `Failed to parse response: ${responseBodyText.substring(0, 100)}...`
-            };
+        if (isAlternativePaymentNewOrder) {
+            console.log(`[StickyLib] Handling response for alternative payment on ${endpoint}.`);
+
+            // First, try to parse as JSON to catch potential API errors from Sticky.io
+            try {
+                const potentialJsonError = JSON.parse(responseBodyText);
+                // Check for common Sticky.io error indicators
+                if (potentialJsonError && (potentialJsonError.error_found === "1" || potentialJsonError.status === "ERROR" || (potentialJsonError.response_code && Number(potentialJsonError.response_code) > 1))) {
+                    console.warn(`[StickyLib] Received JSON error from ${endpoint} during alternative payment flow. Body sample:`, responseBodyText.substring(0,500));
+                    potentialJsonError._status = response.status;
+                    // If Sticky returns a 200 status but the payload indicates an error, set _ok to false.
+                    potentialJsonError._ok = response.ok && !(potentialJsonError.error_found === "1" || potentialJsonError.status === "ERROR");
+                    return potentialJsonError;
+                }
+            } catch (e) {
+                // Not JSON, or malformed JSON. Proceed to HTML check.
+                // console.log(`[StickyLib] Response for alternative payment on ${endpoint} is not a JSON error, proceeding to check for HTML redirect.`);
+            }
+
+            // For alternative payment new_order, expect HTML and try to extract redirect URL
+            // Example: window.location.replace('https://www.sandbox.paypal.com/checkoutnow?token=...');
+            const redirectUrlRegex = /window\.location\.replace\s*\(\s*['"]([^'"]+)['"]\s*\)/;
+            const match = responseBodyText.match(redirectUrlRegex);
+
+            if (match && match[1]) {
+                const extractedUrl = match[1];
+                console.log(`[StickyLib] Extracted PayPal redirect URL: ${extractedUrl}`);
+                return {
+                    _status: response.status,
+                    _ok: response.ok, // If redirect is found and status is 2xx, it's OK.
+                    gateway_response: { redirect_url: extractedUrl }
+                };
+            } else {
+                // This means it wasn't a JSON error handled above, and it's not HTML with a redirect.
+                console.error(`[StickyLib] Failed to extract redirect URL from HTML, or response was not expected format from ${endpoint}. Body sample:`, responseBodyText.substring(0, 500));
+                return {
+                    _status: response.status,
+                    _ok: false, // If we expected a redirect and didn't get one (or got an unhandled format), it's not 'ok'.
+                    _rawBody: responseBodyText,
+                    error_message: `Failed to extract redirect URL or unexpected response format. Raw sample: ${responseBodyText.substring(0, 200)}...`
+                };
+            }
+        } else {
+            // Existing logic for standard JSON API calls
+            // console.log(`[StickyLib] Handling standard JSON response for ${endpoint}.`);
+            try {
+                const responseJson = JSON.parse(responseBodyText);
+                responseJson._status = response.status;
+                responseJson._ok = response.ok;
+                return responseJson;
+            } catch (parseError) {
+                console.error(`[StickyLib] Failed to parse Sticky.io response JSON from ${endpoint}:`, responseBodyText, parseError);
+                return {
+                    _status: response.status,
+                    _ok: response.ok,
+                    _rawBody: responseBodyText,
+                    error_message: `Failed to parse response: ${responseBodyText.substring(0, 100)}...`
+                };
+            }
         }
 
     } catch (error: any) {

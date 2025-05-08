@@ -1,9 +1,9 @@
 import { STICKY_URL_MAP } from '../config'; // Added import
-import { Env, PixelState, PaymentData, StickyPayload, EncryptedData } from '../types';
+import { Env, PixelState, PaymentData, StickyPayload } from '../types'; // Removed EncryptedData
 import { ExecutionContext } from '@cloudflare/workers-types';
 import { addCorsHeaders } from '../middleware/cors';
 import { callStickyNewOrder } from '../lib/sticky';
-import { decryptData } from '../utils/encryption'; // Keep for potential future use, but not used in this change
+// import { decryptData } from '../utils/encryption'; // EncryptedData not used, commenting out decryptData import for now
 import { triggerInitialActions } from '../actions'; // Assuming triggerInitialActions is moved here
 
 // Helper function to determine card type from number (returns uppercase)
@@ -45,7 +45,7 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
 
         // Use 'any' for flexibility, assuming frontend sends expected structure
         const requestBody = await request.json() as any;
-        const { internal_txn_id, targetCampaignId, paymentMethod, ...checkoutPayload } = requestBody;
+        const { internal_txn_id, targetCampaignId, paymentMethod, siteBaseUrl, ...checkoutPayload } = requestBody;
         // Use 127.0.0.1 as fallback if CF-Connecting-IP is missing, as Sticky.io rejects empty strings.
         const ipAddress = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
         const userAgent = request.headers.get('User-Agent') || '';
@@ -80,13 +80,13 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
         }
         state = JSON.parse(stateString) as PixelState; // Assign to outer scope variable
 
-        state.paymentMethod_Initial = determinedPaymentMethod;
+        state.paymentMethod_initial = determinedPaymentMethod; // Corrected to lowercase 'i'
         ctx.waitUntil(
             env.PIXEL_STATE.put(stateKey, JSON.stringify(state))
-                .then(() => console.log(`[CheckoutHandler] KV PUT attempted for ${stateKey} (paymentMethod update)`)) // Add confirmation log
-                .catch(err => console.error(`[CheckoutHandler] Failed to update KV state (paymentMethod) for ${internal_txn_id}: ${err.message}`))
+                .then(() => console.log(`[CheckoutHandler] KV PUT attempted for ${stateKey} (paymentMethod_initial update)`)) // Add confirmation log
+                .catch(err => console.error(`[CheckoutHandler] Failed to update KV state (paymentMethod_initial) for ${internal_txn_id}: ${err.message}`))
         );
-        console.log(`[CheckoutHandler] Updated paymentMethod_Initial to ${determinedPaymentMethod} for ${internal_txn_id}`);
+        console.log(`[CheckoutHandler] Updated paymentMethod_initial to ${determinedPaymentMethod} for ${internal_txn_id}`);
 
         // 3. Prepare Payment Details for Sticky Payload
         let paymentFieldsForSticky: Record<string, any> = {}; // Initialize empty object for payment fields
@@ -96,18 +96,18 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             const paymentFromPayload: PaymentData = checkoutPayload.payment;
 
             if (
-                !paymentFromPayload.cardNumber ||
-                !paymentFromPayload.expirationMonth ||
-                !paymentFromPayload.expirationYear ||
+                !paymentFromPayload.number || // Corrected to 'number'
+                !paymentFromPayload.expiryMonth || // Corrected to 'expiryMonth'
+                !paymentFromPayload.expiryYear || // Corrected to 'expiryYear'
                 !paymentFromPayload.cvv
             ) {
                 console.error(`[CheckoutHandler] Missing raw payment details in payload for ${internal_txn_id}`);
                 return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Missing payment details.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
             }
 
-            const rawCardNumber = paymentFromPayload.cardNumber.replace(/\s/g, ''); // Ensure no spaces
-            const rawMonth = paymentFromPayload.expirationMonth.padStart(2, '0');
-            const rawYear = paymentFromPayload.expirationYear.slice(-2); // Get last 2 digits
+            const rawCardNumber = paymentFromPayload.number.replace(/\s/g, ''); // Corrected to 'number'
+            const rawMonth = paymentFromPayload.expiryMonth.padStart(2, '0'); // Corrected to 'expiryMonth'
+            const rawYear = paymentFromPayload.expiryYear.slice(-2); // Corrected to 'expiryYear', get last 2 digits
             const rawExpiryMMYY = `${rawMonth}${rawYear}`;
             const rawCvv = paymentFromPayload.cvv;
 
@@ -134,6 +134,7 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             console.log(`[CheckoutHandler] PayPal payment method selected, adding required fields.`);
         }
 
+        let finalEffectiveSiteBaseUrl: string | undefined; // Variable to store the determined site base URL
 
         // 4. Construct Sticky.io Payload
         // Use Record<string, any> for flexibility, especially with spread syntax later
@@ -200,12 +201,12 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             C2: state.trackingParams?.c2,
             C3: state.trackingParams?.sub2,
             AID: state.trackingParams?.uid,
-            click_id: state.trackingParams?.click_id,
-            utm_source: state.trackingParams?.utm_source,
-            utm_medium: state.trackingParams?.utm_medium,
-            utm_campaign: state.trackingParams?.utm_campaign,
-            utm_content: state.trackingParams?.utm_content,
-            utm_term: state.trackingParams?.utm_term,
+            click_id: state.trackingParams?.clickId,
+            utm_source: state.trackingParams?.utmSource,
+            utm_medium: state.trackingParams?.utmMedium,
+            utm_campaign: state.trackingParams?.utmCampaign,
+            utm_content: state.trackingParams?.utmContent,
+            utm_term: state.trackingParams?.utmTerm,
 
             preserve_gateway: "1", // Renamed parameter
  
@@ -213,14 +214,39 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             ...(paymentFieldsForSticky), // Spread payment fields (card or paypal)
             // Add alt_pay_return_url specifically for PayPal, pointing to the upsell page
             ...(determinedPaymentMethod === 'paypal' ? (() => {
-                const originalUrl = new URL(request.url);
-                let basePath = originalUrl.pathname;
-                if (basePath.endsWith('/')) {
-                    basePath = basePath.slice(0, -1); // Remove trailing slash if present
+                const originalUrl = new URL(request.url); // Worker's full request URL
+                const workerOrigin = originalUrl.origin; // Worker's origin, e.g., http://127.0.0.1:8787
+                
+                // Determine finalEffectiveSiteBaseUrl (this is for state.siteBaseUrl, MUST be frontend URL)
+                // finalEffectiveSiteBaseUrl is declared at line 137 with wider scope.
+                const siteUrlFromPayload = checkoutPayload.siteBaseUrl; // from request body (line 48)
+                const requestOrigin = request.headers.get('Origin');
+
+                if (siteUrlFromPayload && typeof siteUrlFromPayload === 'string' && siteUrlFromPayload.startsWith('http')) {
+                    finalEffectiveSiteBaseUrl = siteUrlFromPayload;
+                    console.log(`[CheckoutHandler] Using siteBaseUrl from payload for state.siteBaseUrl: ${finalEffectiveSiteBaseUrl}`);
+                } else if (requestOrigin && requestOrigin !== workerOrigin && typeof requestOrigin === 'string' && requestOrigin.startsWith('http')) {
+                    finalEffectiveSiteBaseUrl = requestOrigin;
+                    console.log(`[CheckoutHandler] Using Origin header for state.siteBaseUrl: ${finalEffectiveSiteBaseUrl}. Payload siteBaseUrl was: '${siteUrlFromPayload}'`);
+                } else {
+                    // finalEffectiveSiteBaseUrl remains undefined if neither payload nor suitable Origin header provides a frontend URL.
+                    // The error log in the PayPal redirect block (around line 343) will correctly report this.
+                    console.warn(`[CheckoutHandler] Could not determine a valid frontend site base URL from payload ('${siteUrlFromPayload}') or Origin header ('${requestOrigin}'). state.siteBaseUrl will be undefined. This is critical for PayPal return.`);
                 }
-                const returnUrl = `${originalUrl.origin}${basePath}/upsell1${originalUrl.search}`;
-                console.log(`[CheckoutHandler] Setting alt_pay_return_url for PayPal to: ${returnUrl}`); // Log the constructed URL
-                return { alt_pay_return_url: returnUrl };
+                
+                // For constructing alt_pay_return_url (which points to the WORKER):
+                const workerApiBase = env.WORKER_BASE_URL || workerOrigin; // This is correct for alt_pay_return_url's base
+
+                const returnUrlParams = new URLSearchParams();
+                returnUrlParams.set('internal_txn_id', internal_txn_id);
+                // stickyUrlId is from request.headers.get('X-Sticky-Url-Id') at the top of the handler
+                if (stickyUrlId) {
+                    returnUrlParams.set('sticky_url_id', stickyUrlId);
+                }
+                // This URL must point to the WORKER's endpoint that handles PayPal returns
+                const payPalReturnWorkerEndpoint = `${workerApiBase}/api/checkout/paypal-return?${returnUrlParams.toString()}`;
+                console.log(`[CheckoutHandler] Setting alt_pay_return_url for PayPal to worker endpoint: ${payPalReturnWorkerEndpoint}`);
+                return { alt_pay_return_url: payPalReturnWorkerEndpoint };
             })() : {}),
         };
 
@@ -266,70 +292,135 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
         const stickyOrderId = stickyResponse.order_id;
         const gatewayId = stickyResponse.gateway_id; // Extract gateway_id
 
-        if (stickyOrderId && state) { // Check if state is not null
-            state.stickyOrderId_Initial = String(stickyOrderId);
-            // Make the KV put synchronous to ensure it completes before upsell handler reads
+        if (state) { // Check if state is not null
+            if (stickyOrderId) {
+                state.stickyOrderId_initial = String(stickyOrderId);
+            }
+            if (gatewayId) { // Also store gatewayId if available
+                state.gatewayId = gatewayId;
+            }
+            if (finalEffectiveSiteBaseUrl) {
+                state.siteBaseUrl = finalEffectiveSiteBaseUrl;
+            }
+
+            // Store customer details if available from the initial checkout payload
+            if (checkoutPayload.customer) {
+                state.customerFirstName = checkoutPayload.customer.firstName || state.customerFirstName;
+                state.customerLastName = checkoutPayload.customer.lastName || state.customerLastName;
+                state.customerEmail = checkoutPayload.customer.email || state.customerEmail;
+                state.customerPhone = checkoutPayload.customer.phone || state.customerPhone;
+
+                if (checkoutPayload.customer.shippingAddress) {
+                    let fullStreet = checkoutPayload.customer.shippingAddress.address1 || '';
+                    if (checkoutPayload.customer.shippingAddress.address2) {
+                        fullStreet += ` ${checkoutPayload.customer.shippingAddress.address2}`;
+                    }
+                    state.customerAddress = {
+                        street: fullStreet.trim() || undefined, // Store concatenated street, or undefined if empty
+                        city: checkoutPayload.customer.shippingAddress.city,
+                        state: checkoutPayload.customer.shippingAddress.state,
+                        zip: checkoutPayload.customer.shippingAddress.zip,
+                        country: checkoutPayload.customer.shippingAddress.country,
+                    };
+                } else if (checkoutPayload.billing) { // Fallback to billing if shipping not present but billing is
+                    let fullStreet = checkoutPayload.billing.address1 || '';
+                    if (checkoutPayload.billing.address2) {
+                        fullStreet += ` ${checkoutPayload.billing.address2}`;
+                    }
+                    state.customerAddress = {
+                        street: fullStreet.trim() || undefined, // Store concatenated street, or undefined if empty
+                        city: checkoutPayload.billing.city,
+                        state: checkoutPayload.billing.state,
+                        zip: checkoutPayload.billing.zip,
+                        country: checkoutPayload.billing.country,
+                    };
+                }
+                console.log(`[CheckoutHandler] Preparing to store customer details in state for ${internal_txn_id}:`, {
+                    firstName: state.customerFirstName,
+                    email: state.customerEmail,
+                    addressCity: state.customerAddress?.city
+                });
+            }
+            
+            // This initial state update is important before any redirect or direct success response.
+            // It captures order ID, gateway, site base, and customer details.
+            // For PayPal redirect, status will be updated again.
+            // For direct success, this is the main state update before actions.
+            // Make the KV put synchronous to ensure it completes.
             await env.PIXEL_STATE.put(stateKey, JSON.stringify(state))
-                .then(() => console.log(`[CheckoutHandler] Stored stickyOrderId_Initial ${stickyOrderId} for ${internal_txn_id} (synchronous)`))
-                .catch(err => console.error(`[CheckoutHandler] Failed to update KV state (stickyOrderId_Initial) for ${internal_txn_id}: ${err.message}`));
+                .then(() => console.log(`[CheckoutHandler] Stored initial order details (ID, Gateway, SiteBase, Customer) for ${internal_txn_id} (synchronous)`))
+                .catch(err => console.error(`[CheckoutHandler] Failed to update KV state (initial order details) for ${internal_txn_id}: ${err.message}`));
         }
 
-        if (stickyResponse.response_code === '100') {
-            // --- SUCCESS ---
-            console.log(`[CheckoutHandler] Sticky.io NewOrder SUCCESS for ${internal_txn_id}, Order ID: ${stickyOrderId}, Gateway ID: ${gatewayId}`); // Log gatewayId
-            const triggerResultPromise = triggerInitialActions(internal_txn_id, stickyResponse, env, ctx, request);
-            ctx.waitUntil(triggerResultPromise);
-            const triggerResult = await triggerResultPromise;
 
-            // Ensure the correct orderId and gatewayId are returned in the response
+        if (stickyResponse.response_code === '100') {
+            // --- SUCCESS (Direct, e.g., Card payment) ---
+            console.log(`[CheckoutHandler] Sticky.io NewOrder DIRECT SUCCESS for ${internal_txn_id}, Order ID: ${stickyOrderId}, Gateway ID: ${gatewayId}`);
+            
+            // State already updated with customer details, orderId, gatewayId etc.
+            // Trigger actions
+            const triggerResultPromise = triggerInitialActions(internal_txn_id, stickyResponse, env, ctx, request);
+            ctx.waitUntil(triggerResultPromise); // Allow actions to run in background
+            const triggerResult = await triggerResultPromise; // Wait for result if needed for response
+
             const successResponse = {
                 success: true,
-                orderId: String(stickyOrderId), // Use the variable holding the ID from Sticky
-                gatewayId: gatewayId, // Include gateway_id in the response
+                orderId: String(stickyOrderId),
+                gatewayId: gatewayId,
                 clientSideActions: triggerResult.clientSideActions || []
-                // Add other necessary fields from stickyResponse if needed by frontend context
             };
             return addCorsHeaders(new Response(JSON.stringify(successResponse), { status: 200, headers: { 'Content-Type': 'application/json' } }), request);
 
         } else if (determinedPaymentMethod === 'paypal' && stickyResponse.gateway_response?.redirect_url) {
             // --- PAYPAL REDIRECT ---
-            // Note: gateway_id might not be present on redirect, handle appropriately if needed later
             const redirectUrl = stickyResponse.gateway_response.redirect_url;
             console.log(`[CheckoutHandler] Sticky.io PayPal REDIRECT for ${internal_txn_id} to: ${redirectUrl}`);
-            if (state) { // Check if state is not null
-                state.status = 'paypal_redirect';
-                ctx.waitUntil(
-                    env.PIXEL_STATE.put(stateKey, JSON.stringify(state))
-                        .catch(err => console.error(`[CheckoutHandler] Failed to update KV state (paypal_redirect) for ${internal_txn_id}: ${err.message}`))
-                );
+            
+            if (state) { // State should exist and have been updated with customer details already
+                state.status = 'paypal_redirect'; // Update status for PayPal flow
+                // stickyOrderId_initial, gatewayId, siteBaseUrl, customer details should already be in state from the block above.
+                // Log current state being saved for PayPal redirect
+                console.log(`[CheckoutHandler] Updating PIXEL_STATE for PayPal redirect. Key: ${stateKey}, Status: ${state.status}, PaymentMethod: ${state.paymentMethod_initial}, SiteBaseUrl: ${state.siteBaseUrl}, StickyOrderIdInitial: ${state.stickyOrderId_initial}, GatewayID: ${state.gatewayId}, CustomerEmail: ${state.customerEmail}`);
+
+                await env.PIXEL_STATE.put(stateKey, JSON.stringify(state))
+                    .then(() => console.log(`[CheckoutHandler] PIXEL_STATE update (paypal_redirect status) successful for ${stateKey}`))
+                    .catch(err => {
+                        console.error(`[CheckoutHandler] CRITICAL: Failed to update KV state (paypal_redirect status) for ${stateKey}: ${err.message}. Subsequent PayPal return may fail.`);
+                    });
+            } else {
+                // This case should ideally not happen if state was loaded correctly earlier.
+                console.error(`[CheckoutHandler] State object is null during PayPal redirect handling for ${stateKey}. This is unexpected.`);
             }
-            console.log(`[CheckoutHandler] KV PUT attempted for ${stateKey} (paypal_redirect status update)`); // Add confirmation log
+
             const redirectResponse = {
                 success: true,
                 redirectUrl: redirectUrl,
-                orderId: stickyOrderId,
-                gatewayId: gatewayId // Include gateway_id if available, might be null/undefined
+                orderId: stickyOrderId, // May be null if Sticky only provides it on return
+                gatewayId: gatewayId    // May be null
             };
             return addCorsHeaders(new Response(JSON.stringify(redirectResponse), { status: 200, headers: { 'Content-Type': 'application/json' } }), request);
 
         } else {
-            // --- FAILURE ---
-            // Note: gateway_id might not be present on failure, handle appropriately if needed later
+            // --- FAILURE (Sticky.io NewOrder failed) ---
             const errorMessage = stickyResponse.error_message || stickyResponse.decline_reason || 'Unknown Sticky.io error';
             console.error(`[CheckoutHandler] Sticky.io NewOrder FAILED for ${internal_txn_id}: ${errorMessage}`, stickyResponse);
-            if (state) { // Check if state is not null
+            
+            if (state) { // State should exist
                 state.status = 'failed';
-                ctx.waitUntil(
+                // Customer details might have been set in state already, which is fine.
+                // This PUT is to ensure 'failed' status is recorded.
+                ctx.waitUntil( // Can be async as it's an error path
                     env.PIXEL_STATE.put(stateKey, JSON.stringify(state))
-                        .catch(err => console.error(`[CheckoutHandler] Failed to update KV state (failed) for ${internal_txn_id}: ${err.message}`))
+                        .then(() => console.log(`[CheckoutHandler] PIXEL_STATE update (NewOrder failed status) successful for ${stateKey}`))
+                        .catch(err => console.error(`[CheckoutHandler] Failed to update KV state (NewOrder failed status) for ${internal_txn_id}: ${err.message}`))
                 );
             }
-            console.log(`[CheckoutHandler] KV PUT attempted for ${stateKey} (failed status update)`); // Add confirmation log
+
             const errorResponse = {
                 success: false,
                 message: `Payment failed: ${errorMessage}`,
                 details: stickyResponse,
-                gatewayId: gatewayId // Include gateway_id if available, might be null/undefined
+                gatewayId: gatewayId
             };
             const status = (stickyResponse._status >= 500 || !stickyResponse._ok) ? 502 : 400;
             return addCorsHeaders(new Response(JSON.stringify(errorResponse), { status: status, headers: { 'Content-Type': 'application/json' } }), request);

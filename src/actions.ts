@@ -115,7 +115,12 @@ async function getActionKeys(
 
   console.log(`getActionKeys: Attempting to fetch affiliate-specific action list key (using lowercase affid): ${actionListKey}`);
 
+  if (!env.PIXEL_CONFIG) {
+    console.warn(`[getActionKeys] PIXEL_CONFIG KV namespace not available. Cannot fetch action list for key: ${actionListKey}`);
+    return [];
+  }
   const actionKeysStr = await env.PIXEL_CONFIG.get(actionListKey);
+
 
   if (!actionKeysStr) {
     console.log(`getActionKeys: Affiliate-specific action list key '${actionListKey}' not found in KV. No actions will be fired.`);
@@ -152,112 +157,105 @@ export async function triggerInitialActions(
   context: ExecutionContext,
   request: CfRequest // The original incoming request to the worker endpoint
 ): Promise<TriggerActionsResult> {
-  const stateKey = `txn_${internal_txn_id}`;
+  const kvKey = `txn_${internal_txn_id}`; // Use prefixed key
   const clientSideActions: string[] = [];
   const serverSidePromises: Promise<void>[] = [];
 
   try {
-    const stateString = await env.PIXEL_STATE.get(stateKey);
+    console.log(`[triggerInitialActions] Attempting to get state for key: ${kvKey}`);
+    const stateString = await env.PIXEL_STATE.get(kvKey);
     if (!stateString) {
-      console.error('triggerInitialActions: State not found for txn', { internal_txn_id }); // Replaced logError
+      console.error('[triggerInitialActions] State not found for txn', { internal_txn_id, stateKeyUsed: kvKey });
       return { clientSideActions: [] };
     }
     const state: PixelState = JSON.parse(stateString);
+    console.log(`[triggerInitialActions] State found for ${kvKey}:`, state);
 
-    // Extract siteId early for use in getActionKeys
+
     const siteId = state.siteId;
     if (!siteId) {
-      console.error('triggerInitialActions: siteId missing from state', { internal_txn_id });
+      console.error('[triggerInitialActions] siteId missing from state', { internal_txn_id, stateKeyUsed: kvKey });
       return { clientSideActions: [] };
     }
 
-    // 1. Idempotency Check
-    if (state.processed_Initial === true) {
-      console.log(`triggerInitialActions: Already processed for ${internal_txn_id}`);
+    if (state.processedInitial === true) {
+      console.log(`[triggerInitialActions] Already processed for ${internal_txn_id} (key: ${kvKey})`);
       return { clientSideActions: [] };
     }
 
-    // 2. Update KV State (Mark as processed) - Do this early
-    const updatedState: Partial<PixelState> = {
-    	processed_Initial: true,
-    	status: 'processed', // Mark overall status as processed on initial processing
-    	timestamp_processed_Initial: new Date().toISOString(),
+    const updatedStateFields: Partial<PixelState> = {
+    	processedInitial: true,
+    	status: 'processed',
     };
-    // Use waitUntil to ensure KV write happens even if function returns early
     context.waitUntil(
-      env.PIXEL_STATE.put(stateKey, JSON.stringify({ ...state, ...updatedState }))
-        .catch(err => console.error('triggerInitialActions: Failed to update KV state', { internal_txn_id, error: err.message })) // Replaced logError
+      env.PIXEL_STATE.put(kvKey, JSON.stringify({ ...state, ...updatedStateFields }))
+        .then(() => console.log(`[triggerInitialActions] Successfully updated PIXEL_STATE for ${kvKey} to mark as processed.`))
+        .catch(err => console.error('[triggerInitialActions] Failed to update KV state', { internal_txn_id, stateKeyUsed: kvKey, error: err.message }))
     );
 
-    // 3. Fetch Payout Rules
-    const payoutStepsStr = await env.PIXEL_CONFIG.get('payout_steps') ?? "1";
-    const payoutSteps = parseInt(payoutStepsStr, 10);
+    const payoutSteps = 1; // Placeholder
 
-    // 4. Check Payout Step
     if (isNaN(payoutSteps) || payoutSteps < 1) {
-      console.log(`triggerInitialActions: Payout step (${payoutStepsStr}) prevents initial actions for ${internal_txn_id}`);
+      console.log(`[triggerInitialActions] Payout step (${payoutSteps}) prevents initial actions for ${internal_txn_id}`);
       return { clientSideActions: [] };
     }
 
-    // 5. Get Action Keys using the helper function (which now requires affid)
-    const isScrub = state.scrubDecision?.isScrub ?? false; // Default to false if scrubDecision is missing
+    const isScrub = false; 
     const actionKeys = await getActionKeys(siteId, 'checkout', isScrub, request, env);
 
     if (actionKeys.length === 0) {
-      console.log(`triggerInitialActions: No actions to perform for ${internal_txn_id} based on getActionKeys result.`);
+      console.log(`[triggerInitialActions] No actions to perform for ${internal_txn_id} based on getActionKeys result.`);
       return { clientSideActions: [] };
     }
 
-    // 6. Fetch Action Definitions (using siteId prefix and cache)
     const actionDefinitions: { key: string; definition: ActionDefinition | null | undefined }[] = await Promise.all(
       actionKeys.map(async (key) => {
-        const definitionKey = `${siteId}_${key}`; // e.g., esther_action_FacebookPurchase
-        const cacheKey = `actionDef_${definitionKey}`;
-        let definition: ActionDefinition | null | undefined = getCache<ActionDefinition>(cacheKey);
+        const definitionKey = `${siteId}_${key}`; 
+        const cacheKeyDef = `actionDef_${definitionKey}`; 
+        let definition: ActionDefinition | null | undefined = getCache<ActionDefinition>(cacheKeyDef);
 
-        if (definition !== undefined) { // Check cache first (undefined means not cached or expired)
-          console.log(`Cache hit for action definition: ${cacheKey}`);
+        if (definition !== undefined) { 
+          console.log(`Cache hit for action definition: ${cacheKeyDef}`);
           return { key, definition };
         }
 
-        console.log(`Cache miss for action definition: ${cacheKey}. Fetching from KV.`);
-        const definitionStr = await env.PIXEL_CONFIG.get(definitionKey);
+        console.log(`Cache miss for action definition: ${cacheKeyDef}. Fetching from KV.`);
+        let definitionStr: string | null = null;
+        if (env.PIXEL_CONFIG) {
+            definitionStr = await env.PIXEL_CONFIG.get(definitionKey);
+        } else {
+            console.warn(`[triggerInitialActions] PIXEL_CONFIG KV namespace not available. Cannot fetch action definition for key: ${definitionKey}`);
+        }
+        
         try {
           definition = definitionStr ? JSON.parse(definitionStr) : null;
-          // Cache the result (even if null) for 60 seconds
-          setCache(cacheKey, definition, 60);
-          console.log(`Cached action definition for: ${cacheKey}`);
+          setCache(cacheKeyDef, definition, 60);
+          console.log(`Cached action definition for: ${cacheKeyDef}`);
           return { key, definition };
         } catch (parseError: any) {
           console.error(`Failed to parse action definition JSON for key '${definitionKey}'. Value: ${definitionStr}. Error: ${parseError.message}`);
-          // Cache null on parse error to prevent repeated attempts for invalid data
-          setCache(cacheKey, null, 60);
+          setCache(cacheKeyDef, null, 60);
           return { key, definition: null };
         }
       })
     );
 
-    // 7. Parameterize & Execute/Collect Actions
-    // Construct dataSources and cast to the type expected by populateParameters
     const dataSources: ParameterDataSources = { state, confirmationData, request, env };
-    // const isScrub = state.scrubDecision.isScrub; // isScrub is now handled within populateParameters/resolveParameterValue
 
     for (const { key: actionKey, definition } of actionDefinitions) {
       if (!definition) {
-        console.error('triggerInitialActions: Action definition not found', { internal_txn_id, actionKey }); // Replaced logError
+        console.error('[triggerInitialActions] Action definition not found or null', { internal_txn_id, actionKey }); 
         continue;
       }
 
       try {
         if (definition.type === 'server-side') {
-          // Await populateParameters, cast result where necessary
           const populatedUrlResult = await populateParameters(definition.url, dataSources);
-          const populatedUrl = typeof populatedUrlResult === 'string' ? populatedUrlResult : JSON.stringify(populatedUrlResult); // Ensure string
+          const populatedUrl = typeof populatedUrlResult === 'string' ? populatedUrlResult : JSON.stringify(populatedUrlResult);
 
           const populatedHeadersResult = definition.headers
             ? await populateParameters(definition.headers, dataSources)
             : undefined;
-          // Ensure populatedHeaders is Record<string, string> | undefined
           const populatedHeaders = typeof populatedHeadersResult === 'object' && populatedHeadersResult !== null
             ? populatedHeadersResult as Record<string, string>
             : undefined;
@@ -267,29 +265,25 @@ export async function triggerInitialActions(
              if (typeof definition.body_template === 'object') {
                  const populatedBodyObj = await populateParameters(definition.body_template, dataSources);
                  populatedBody = JSON.stringify(populatedBodyObj);
-             } else { // string template
+             } else { 
                  const populatedBodyResult = await populateParameters(definition.body_template, dataSources);
-                 // Ensure populatedBody is string | undefined
                  populatedBody = typeof populatedBodyResult === 'string' ? populatedBodyResult : undefined;
              }
           }
-
-          // Add promise to array for async execution
           serverSidePromises.push(
             executeServerSideAction(definition, populatedUrl, populatedHeaders, populatedBody, internal_txn_id, actionKey)
           );
 
         } else if (definition.type === 'client-side') {
           const populatedScriptResult = await populateParameters(definition.script_template, dataSources);
-           // Ensure populatedScript is string before pushing
           if (typeof populatedScriptResult === 'string') {
             clientSideActions.push(populatedScriptResult);
           } else {
-             console.error('triggerInitialActions: Client-side script population did not return a string', { internal_txn_id, actionKey });
+             console.error('[triggerInitialActions] Client-side script population did not return a string', { internal_txn_id, actionKey });
           }
         }
       } catch (paramError: any) {
-         console.error('triggerInitialActions: Parameter population error', {
+         console.error('[triggerInitialActions] Parameter population error', {
              internal_txn_id,
              actionKey,
              errorMessage: paramError.message,
@@ -297,21 +291,20 @@ export async function triggerInitialActions(
       }
     }
 
-    // 8. Execute Server-Side Actions Asynchronously
     if (serverSidePromises.length > 0) {
       context.waitUntil(Promise.allSettled(serverSidePromises));
     }
 
-    console.log(`triggerInitialActions: Completed for ${internal_txn_id}. Returning ${clientSideActions.length} client actions.`);
+    console.log(`[triggerInitialActions] Completed for ${internal_txn_id}. Returning ${clientSideActions.length} client actions.`);
     return { clientSideActions };
 
   } catch (error: any) {
-    console.error('triggerInitialActions: Unhandled error', { // Replaced logError
+    console.error('[triggerInitialActions] Unhandled error', { 
       internal_txn_id,
       errorMessage: error.message,
       stack: error.stack,
     });
-    return { clientSideActions: [] }; // Return empty on error
+    return { clientSideActions: [] }; 
   }
 }
 
@@ -322,110 +315,103 @@ export async function triggerInitialActions(
 export async function triggerUpsellActions(
   internal_txn_id: string,
   upsellStepNum: number, // e.g., 1, 2
-  confirmationData: any, // Data from successful Sticky.io new_upsell
+  confirmationData: any, // Data from successful Sticky.io new_upsell or new_order (for PayPal upsell)
   env: Env,
   context: ExecutionContext,
   request: CfRequest // The original incoming request to the worker endpoint
 ): Promise<TriggerActionsResult> {
-  const stateKey = `txn_${internal_txn_id}`;
+  const kvKey = `txn_${internal_txn_id}`; // Use prefixed key
   const clientSideActions: string[] = [];
   const serverSidePromises: Promise<void>[] = [];
-  const processedFlagKey = `processed_Upsell_${upsellStepNum}` as keyof PixelState; // e.g., processed_Upsell_1
-  const timestampFlagKey = `timestamp_processed_Upsell_${upsellStepNum}` as keyof PixelState; // e.g., timestamp_processed_Upsell_1
-  const actionListKey = `upsell${upsellStepNum}NormalActions`; // e.g., upsell1NormalActions
+  
+  const processedFlagKey = `processed_Upsell_${upsellStepNum}` as keyof PixelState;
 
   try {
-    const stateString = await env.PIXEL_STATE.get(stateKey);
+    console.log(`[triggerUpsellActions] Attempting to get state for key: ${kvKey}, step: ${upsellStepNum}`);
+    const stateString = await env.PIXEL_STATE.get(kvKey);
     if (!stateString) {
-      console.error('triggerUpsellActions: State not found for txn', { internal_txn_id, upsellStepNum }); // Replaced logError
+      console.error('[triggerUpsellActions] State not found for txn', { internal_txn_id, upsellStepNum, stateKeyUsed: kvKey });
       return { clientSideActions: [] };
     }
     const state: PixelState = JSON.parse(stateString);
+    console.log(`[triggerUpsellActions] State found for ${kvKey}:`, state);
 
-    // Extract siteId early for use in getActionKeys
     const siteId = state.siteId;
     if (!siteId) {
-      console.error('triggerUpsellActions: siteId missing from state', { internal_txn_id, upsellStepNum });
+      console.error('[triggerUpsellActions] siteId missing from state', { internal_txn_id, upsellStepNum, stateKeyUsed: kvKey });
       return { clientSideActions: [] };
     }
 
-    // 1. Idempotency Check
     if (state[processedFlagKey] === true) {
-      console.log(`triggerUpsellActions: Step ${upsellStepNum} already processed for ${internal_txn_id}`);
+      console.log(`[triggerUpsellActions] Step ${upsellStepNum} already processed for ${internal_txn_id} (key: ${kvKey})`);
       return { clientSideActions: [] };
     }
 
-    // 2. Update KV State (Mark step as processed) - Do this early
-    const updatedState: Partial<PixelState> = {
+    const updatedStepStateFields: Partial<PixelState> = {
       [processedFlagKey]: true,
-      [timestampFlagKey]: new Date().toISOString(),
     };
-     // Use waitUntil to ensure KV write happens even if function returns early
     context.waitUntil(
-      env.PIXEL_STATE.put(stateKey, JSON.stringify({ ...state, ...updatedState }))
-        .catch(err => console.error('triggerUpsellActions: Failed to update KV state', { internal_txn_id, upsellStepNum, error: err.message })) // Replaced logError
+      env.PIXEL_STATE.put(kvKey, JSON.stringify({ ...state, ...updatedStepStateFields }))
+        .then(() => console.log(`[triggerUpsellActions] Successfully updated PIXEL_STATE for ${kvKey} to mark upsell step ${upsellStepNum} as processed.`))
+        .catch(err => console.error('[triggerUpsellActions] Failed to update KV state for upsell step', { internal_txn_id, upsellStepNum, stateKeyUsed: kvKey, error: err.message }))
     );
 
-    // 3. Get Action Keys using the helper function (which now requires affid)
-    const isScrub = state.scrubDecision?.isScrub ?? false; // Default to false if scrubDecision is missing
+    const isScrub = false;
     const eventName = `upsell${upsellStepNum}`;
     const actionKeys = await getActionKeys(siteId, eventName, isScrub, request, env);
 
     if (actionKeys.length === 0) {
-      console.log(`triggerUpsellActions: No actions to perform for step ${upsellStepNum} on ${internal_txn_id} based on getActionKeys result.`);
+      console.log(`[triggerUpsellActions] No actions to perform for step ${upsellStepNum} on ${internal_txn_id} based on getActionKeys result.`);
       return { clientSideActions: [] };
     }
 
-    // 4. Fetch Action Definitions (using siteId prefix and cache)
     const actionDefinitions: { key: string; definition: ActionDefinition | null | undefined }[] = await Promise.all(
       actionKeys.map(async (key) => {
-        const definitionKey = `${siteId}_${key}`; // e.g., esther_action_FacebookUpsell
-        const cacheKey = `actionDef_${definitionKey}`;
-        let definition: ActionDefinition | null | undefined = getCache<ActionDefinition>(cacheKey);
+        const definitionKey = `${siteId}_${key}`; 
+        const cacheKeyDef = `actionDef_${definitionKey}`; 
+        let definition: ActionDefinition | null | undefined = getCache<ActionDefinition>(cacheKeyDef);
 
-        if (definition !== undefined) { // Check cache first (undefined means not cached or expired)
-          console.log(`Cache hit for action definition: ${cacheKey}`);
+        if (definition !== undefined) { 
+          console.log(`Cache hit for action definition: ${cacheKeyDef}`);
           return { key, definition };
         }
-
-        console.log(`Cache miss for action definition: ${cacheKey}. Fetching from KV.`);
-        const definitionStr = await env.PIXEL_CONFIG.get(definitionKey);
+        console.log(`Cache miss for action definition: ${cacheKeyDef}. Fetching from KV.`);
+        let definitionStr: string | null = null;
+        if (env.PIXEL_CONFIG) {
+            definitionStr = await env.PIXEL_CONFIG.get(definitionKey);
+        } else {
+            console.warn(`[triggerUpsellActions] PIXEL_CONFIG KV namespace not available. Cannot fetch action definition for key: ${definitionKey}`);
+        }
+        
          try {
           definition = definitionStr ? JSON.parse(definitionStr) : null;
-          // Cache the result (even if null) for 60 seconds
-          setCache(cacheKey, definition, 60);
-          console.log(`Cached action definition for: ${cacheKey}`);
+          setCache(cacheKeyDef, definition, 60);
+          console.log(`Cached action definition for: ${cacheKeyDef}`);
           return { key, definition };
         } catch (parseError: any) {
           console.error(`Failed to parse action definition JSON for key '${definitionKey}'. Value: ${definitionStr}. Error: ${parseError.message}`);
-          // Cache null on parse error to prevent repeated attempts for invalid data
-          setCache(cacheKey, null, 60);
+          setCache(cacheKeyDef, null, 60);
           return { key, definition: null };
         }
       })
     );
 
-    // 5. Parameterize & Execute/Collect Actions
-    // Construct dataSources and cast to the type expected by populateParameters
     const dataSources: ParameterDataSources = { state, confirmationData, request, env };
-    // const isScrub = state.scrubDecision.isScrub; // isScrub is now handled within populateParameters/resolveParameterValue
 
     for (const { key: actionKey, definition } of actionDefinitions) {
       if (!definition) {
-        console.error('triggerUpsellActions: Action definition not found', { internal_txn_id, upsellStepNum, actionKey }); // Replaced logError
+        console.error('[triggerUpsellActions] Action definition not found or null', { internal_txn_id, upsellStepNum, actionKey }); 
         continue;
       }
 
        try {
           if (definition.type === 'server-side') {
-            // Await populateParameters, cast result where necessary
             const populatedUrlResult = await populateParameters(definition.url, dataSources);
-            const populatedUrl = typeof populatedUrlResult === 'string' ? populatedUrlResult : JSON.stringify(populatedUrlResult); // Ensure string
+            const populatedUrl = typeof populatedUrlResult === 'string' ? populatedUrlResult : JSON.stringify(populatedUrlResult);
 
             const populatedHeadersResult = definition.headers
               ? await populateParameters(definition.headers, dataSources)
               : undefined;
-            // Ensure populatedHeaders is Record<string, string> | undefined
             const populatedHeaders = typeof populatedHeadersResult === 'object' && populatedHeadersResult !== null
               ? populatedHeadersResult as Record<string, string>
               : undefined;
@@ -435,29 +421,25 @@ export async function triggerUpsellActions(
                if (typeof definition.body_template === 'object') {
                    const populatedBodyObj = await populateParameters(definition.body_template, dataSources);
                    populatedBody = JSON.stringify(populatedBodyObj);
-               } else { // string template
+               } else { 
                    const populatedBodyResult = await populateParameters(definition.body_template, dataSources);
-                   // Ensure populatedBody is string | undefined
                    populatedBody = typeof populatedBodyResult === 'string' ? populatedBodyResult : undefined;
                }
             }
-
-            // Add promise to array for async execution
             serverSidePromises.push(
               executeServerSideAction(definition, populatedUrl, populatedHeaders, populatedBody, internal_txn_id, actionKey)
             );
 
           } else if (definition.type === 'client-side') {
             const populatedScriptResult = await populateParameters(definition.script_template, dataSources);
-            // Ensure populatedScript is string before pushing
             if (typeof populatedScriptResult === 'string') {
               clientSideActions.push(populatedScriptResult);
             } else {
-               console.error('triggerUpsellActions: Client-side script population did not return a string', { internal_txn_id, upsellStepNum, actionKey });
+               console.error('[triggerUpsellActions] Client-side script population did not return a string', { internal_txn_id, upsellStepNum, actionKey });
             }
           }
        } catch (paramError: any) {
-           console.error('triggerUpsellActions: Parameter population error', {
+           console.error('[triggerUpsellActions] Parameter population error', {
                internal_txn_id,
                upsellStepNum,
                actionKey,
@@ -466,21 +448,20 @@ export async function triggerUpsellActions(
        }
     }
 
-    // 6. Execute Server-Side Actions Asynchronously
     if (serverSidePromises.length > 0) {
       context.waitUntil(Promise.allSettled(serverSidePromises));
     }
 
-    console.log(`triggerUpsellActions: Completed for step ${upsellStepNum} on ${internal_txn_id}. Returning ${clientSideActions.length} client actions.`);
+    console.log(`[triggerUpsellActions] Completed for step ${upsellStepNum} on ${internal_txn_id}. Returning ${clientSideActions.length} client actions.`);
     return { clientSideActions };
 
   } catch (error: any) {
-    console.error('triggerUpsellActions: Unhandled error', { // Replaced logError
+    console.error('[triggerUpsellActions] Unhandled error', { 
       internal_txn_id,
       upsellStepNum,
       errorMessage: error.message,
       stack: error.stack,
     });
-    return { clientSideActions: [] }; // Return empty on error
+    return { clientSideActions: [] }; 
   }
 }
