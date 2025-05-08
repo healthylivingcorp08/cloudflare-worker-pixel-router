@@ -47,6 +47,14 @@ STICKYIO_API_KEY = "test_key"
 [observability.logs]
 enabled = true
 
+# Rate Limiting Binding
+[[unsafe.bindings]]
+name = "API_RATE_LIMITER" # You can name this binding as you prefer
+type = "ratelimit"
+namespace_id = 1001       # Choose a unique integer for your Cloudflare account
+# Example: Limit to 20 requests per 10 seconds per key.
+# Adjust 'limit' and 'period' (10 or 60 seconds) as needed for your checkout endpoint.
+simple = { limit = 20, period = 10 }
 
 
 

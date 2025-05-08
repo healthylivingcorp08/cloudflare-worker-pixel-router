@@ -1,4 +1,4 @@
-import type { KVNamespace, DurableObjectNamespace, Request as CfRequest } from '@cloudflare/workers-types';
+import type { KVNamespace, DurableObjectNamespace, Request as CfRequest, RateLimiter } from '@cloudflare/workers-types';
 
 export interface Env {
     // KV Namespaces
@@ -18,6 +18,7 @@ export interface Env {
     // Bindings for other services (e.g., Queues, D1)
     // MY_QUEUE: Queue;
     // MY_D1_DB: D1Database;
+    API_RATE_LIMITER: RateLimiter; // Added for Worker Rate Limiting
 
     // Variables for testing/local development
     IS_LOCAL?: boolean | string; // Flag for local development specific logic
