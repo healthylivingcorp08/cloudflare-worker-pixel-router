@@ -136,6 +136,7 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
                 // Optional fields from user's sample new_upsell request, if needed
                 // notes: "PayPal upsell via server_cloudflare_tech",
                 // AFID: state.affid, // If you store these in state
+                website: state.initialUrl ? `PayPal Upsell on ${state.initialUrl}` : (state.siteBaseUrl ? `PayPal Upsell on ${state.siteBaseUrl}` : `PayPal Upsell (source URL not available)`),
             };
             
             // Remove undefined fields from payload to keep it clean
@@ -238,6 +239,7 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
                 ipAddress: request.headers.get('CF-Connecting-IP') || '127.0.0.1',
                 gatewayId: upsellData.forceGatewayId || state.gatewayId,
                 preserve_gateway: upsellData.preserve_gateway || "1",
+website: state.initialUrl ? `Card Upsell on ${state.initialUrl}` : (state.siteBaseUrl ? `Card Upsell on ${state.siteBaseUrl}` : `Card Upsell (source URL not available)`),
             };
             console.log(`[UpsellHandler] Card new_upsell payload for ${kvKey}:`, cardUpsellPayload);
             const result: StickyPayload = await callStickyUpsell(stickyBaseUrl, cardUpsellPayload, env);

@@ -208,7 +208,7 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             utm_content: state.trackingParams?.utmContent,
             utm_term: state.trackingParams?.utmTerm,
 
-            preserve_gateway: "1", // Renamed parameter
+            preserve_force_gateway: "1", // Renamed parameter
  
             // Add payment fields directly to the payload if it's a card payment
             ...(paymentFieldsForSticky), // Spread payment fields (card or paypal)
@@ -221,17 +221,20 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
                 // finalEffectiveSiteBaseUrl is declared at line 137 with wider scope.
                 const siteUrlFromPayload = checkoutPayload.siteBaseUrl; // from request body (line 48)
                 const requestOrigin = request.headers.get('Origin');
+                const requestReferer = request.headers.get('Referer'); // Get Referer
 
                 if (siteUrlFromPayload && typeof siteUrlFromPayload === 'string' && siteUrlFromPayload.startsWith('http')) {
                     finalEffectiveSiteBaseUrl = siteUrlFromPayload;
                     console.log(`[CheckoutHandler] Using siteBaseUrl from payload for state.siteBaseUrl: ${finalEffectiveSiteBaseUrl}`);
+                } else if (requestReferer && typeof requestReferer === 'string' && requestReferer.startsWith('http')) { // Check Referer next
+                    finalEffectiveSiteBaseUrl = requestReferer;
+                    console.log(`[CheckoutHandler] Using Referer header for state.siteBaseUrl: ${finalEffectiveSiteBaseUrl}. Payload siteBaseUrl was: '${siteUrlFromPayload}'`);
                 } else if (requestOrigin && requestOrigin !== workerOrigin && typeof requestOrigin === 'string' && requestOrigin.startsWith('http')) {
                     finalEffectiveSiteBaseUrl = requestOrigin;
-                    console.log(`[CheckoutHandler] Using Origin header for state.siteBaseUrl: ${finalEffectiveSiteBaseUrl}. Payload siteBaseUrl was: '${siteUrlFromPayload}'`);
+                    console.log(`[CheckoutHandler] Using Origin header for state.siteBaseUrl: ${finalEffectiveSiteBaseUrl}. Payload siteBaseUrl was: '${siteUrlFromPayload}', Referer was: '${requestReferer}'`);
                 } else {
                     // finalEffectiveSiteBaseUrl remains undefined if neither payload nor suitable Origin header provides a frontend URL.
-                    // The error log in the PayPal redirect block (around line 343) will correctly report this.
-                    console.warn(`[CheckoutHandler] Could not determine a valid frontend site base URL from payload ('${siteUrlFromPayload}') or Origin header ('${requestOrigin}'). state.siteBaseUrl will be undefined. This is critical for PayPal return.`);
+                    console.warn(`[CheckoutHandler] Could not determine a valid frontend site base URL from payload ('${siteUrlFromPayload}'), Referer ('${requestReferer}'), or Origin header ('${requestOrigin}'). state.siteBaseUrl will be undefined. This is critical for PayPal return.`);
                 }
                 
                 // For constructing alt_pay_return_url (which points to the WORKER):
@@ -253,6 +256,16 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
 
         // Remove undefined and null fields before sending
         const payloadToSend: Record<string, any> = stickyPayload; // Keep as Record for cleanup
+if (state) {
+            const sourceUrl = state.initialUrl || state.siteBaseUrl; // Prioritize initialUrl
+            if (sourceUrl) {
+                payloadToSend.website = `Initial order from ${sourceUrl}`;
+            } else {
+                payloadToSend.website = `Initial order (source URL not captured in state)`;
+            }
+        } else {
+            payloadToSend.website = `Initial order (state not available to determine source URL)`;
+        }
         Object.keys(payloadToSend).forEach((key: string) => {
             // Remove undefined and null values, as Sticky might not like them
             if (payloadToSend[key] === undefined || payloadToSend[key] === null) {

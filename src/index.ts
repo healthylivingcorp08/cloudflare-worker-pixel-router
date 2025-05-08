@@ -30,7 +30,7 @@ export default {
     } else {
       // This case should ideally not happen if wrangler.toml is configured correctly
       // and the binding is present. Log a warning or handle as appropriate.
-      console.warn('API_RATE_LIMITER binding not found in environment. Skipping rate limiting.');
+      // console.warn('API_RATE_LIMITER binding not found in environment. Skipping rate limiting.');
     }
 
     // Delegate all routing logic to the routeRequest function
