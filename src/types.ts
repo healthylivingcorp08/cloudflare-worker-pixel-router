@@ -3,7 +3,7 @@ import type { KVNamespace, DurableObjectNamespace, Request as CfRequest } from '
 export interface Env {
     // KV Namespaces
     PIXEL_STATE: KVNamespace; // Stores transaction-specific state
-    PIXEL_CONFIG?: KVNamespace; // Stores site configurations, action definitions, rules (Optional for now)
+    PIXEL_CONFIG: KVNamespace; // Stores site configurations, action definitions, rules
 
     // Durable Objects
     // RATE_LIMITER: DurableObjectNamespace; // Example if using DO for rate limiting
@@ -34,7 +34,7 @@ export interface CustomerAddress {
 export interface PixelState {
     // Core transaction details
     internal_txn_id: string; // Unique ID for this transaction journey
-    status: 'pending' | 'processed' | 'failed' | 'upsell_attempted' | 'upsell_processed' | 'error' | 'paypal_redirect'; // Status of the transaction
+    status: 'pending' | 'processed' | 'failed' | 'upsell_attempted' | 'upsell_processed' | 'error' | 'paypal_redirect' | 'paypal_upsell_completed'; // Status of the transaction
     timestamp_created: string; // ISO 8601 timestamp
     timestamp_last_updated: string; // ISO 8601 timestamp
     siteId?: string; // Identifier for the site/funnel this transaction belongs to
@@ -84,6 +84,7 @@ export interface PixelState {
     scrubDecision?: { // Example if scrub logic is implemented
         isScrub: boolean;
         reason?: string;
+        targetCampaignId: string; // Added to store the chosen campaign ID
     };
 
     // Add any other dynamic fields as needed, consider using a more flexible structure if many dynamic fields
@@ -163,6 +164,16 @@ export interface CheckoutRequestPayload {
     subid5?: string;
     notes?: string; // Order notes for Sticky.io
     siteBaseUrl?: string; // e.g. https://www.example.com, for constructing return URLs
+}
+
+// Represents the structure of credit card details, often nested within other payloads
+export interface PaymentData {
+    number: string;
+    cvv: string;
+    expiryMonth: string; // MM
+    expiryYear: string;  // YYYY or YY depending on source
+    // cardholderName?: string; // Optional, if collected
+    // type?: string; // Optional, e.g., 'visa', 'mastercard' if known
 }
 
 export interface UpsellOfferItem {

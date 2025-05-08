@@ -18,18 +18,19 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
             }), { status: 400 }), request);
         }
         console.log(`[UpsellHandler] Received X-Internal-Transaction-Id: ${internal_txn_id}`);
+        const kvKey = `txn_${internal_txn_id}`;
 
-        const stateString = await env.PIXEL_STATE.get(internal_txn_id);
+        const stateString = await env.PIXEL_STATE.get(kvKey);
         if (!stateString) {
-            console.error(`[UpsellHandler] Transaction state not found in KV for internal_txn_id: ${internal_txn_id}`);
-            return addCorsHeaders(new Response(JSON.stringify({ 
-                success: false, 
-                message: 'Transaction state not found' 
+            console.error(`[UpsellHandler] Transaction state not found in KV for key: ${kvKey} (internal_txn_id: ${internal_txn_id})`);
+            return addCorsHeaders(new Response(JSON.stringify({
+                success: false,
+                message: 'Transaction state not found'
             }), { status: 404 }), request);
         }
 
         const state: PixelState = JSON.parse(stateString);
-        console.log(`[UpsellHandler] Found PixelState for ${internal_txn_id}:`, { paymentMethod_initial: state.paymentMethod_initial, paypalTransactionId: state.paypalTransactionId, stickyOrderId_initial: state.stickyOrderId_initial, currentStickyOrderId: state.stickyOrderId });
+        console.log(`[UpsellHandler] Found PixelState for ${kvKey}:`, { paymentMethod_initial: state.paymentMethod_initial, paypalTransactionId: state.paypalTransactionId, stickyOrderId_initial: state.stickyOrderId_initial, currentStickyOrderId: state.stickyOrderId });
 
         const upsellData = await request.json() as UpsellRequest;
 
@@ -44,24 +45,23 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
 
 
         if (!stickyUrlId) {
-            console.error('[UpsellHandler] Missing X-Sticky-Url-Id header or sticky_url_id in payload/state');
+            console.error(`[UpsellHandler] Missing X-Sticky-Url-Id header or sticky_url_id in payload/state for ${kvKey}`);
             return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Missing Sticky URL identifier.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
         }
 
         const stickyBaseUrl = STICKY_URL_MAP[stickyUrlId];
         if (!stickyBaseUrl) {
-            console.error(`[UpsellHandler] Invalid or missing Sticky Base URL for ID: ${stickyUrlId}`);
+            console.error(`[UpsellHandler] Invalid or missing Sticky Base URL for ID: ${stickyUrlId} (key: ${kvKey})`);
             return addCorsHeaders(new Response(JSON.stringify({ success: false, message: `Invalid Sticky URL identifier: ${stickyUrlId}` }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
         }
-        console.log(`[UpsellHandler] Using Sticky Base URL: ${stickyBaseUrl} for ID: ${stickyUrlId}`);
+        console.log(`[UpsellHandler] Using Sticky Base URL: ${stickyBaseUrl} for ID: ${stickyUrlId} (key: ${kvKey})`);
         // --- End Sticky URL ID Handling ---
 
-
         const isPaypalFlow = state.paymentMethod_initial === 'paypal' || !!state.paypalTransactionId;
-        console.log(`[UpsellHandler] Determined isPaypalFlow: ${isPaypalFlow} for internal_txn_id: ${internal_txn_id}`);
+        console.log(`[UpsellHandler] Determined isPaypalFlow: ${isPaypalFlow} for ${kvKey}`);
 
         if (isPaypalFlow) {
-            console.log(`[UpsellHandler] Processing PayPal upsell for internal_txn_id: ${internal_txn_id}`);
+            console.log(`[UpsellHandler] Processing PayPal upsell for ${kvKey}`);
             const paypalUpsellPayload = {
                 firstName: state.customerFirstName,
                 lastName: state.customerLastName,
@@ -71,7 +71,7 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
                 billingState: state.customerAddress?.state,
                 billingZip: state.customerAddress?.zip,
                 billingCountry: state.customerAddress?.country,
-                shippingAddress1: state.customerAddress?.street, 
+                shippingAddress1: state.customerAddress?.street,
                 shippingCity: state.customerAddress?.city,
                 shippingState: state.customerAddress?.state,
                 shippingZip: state.customerAddress?.zip,
@@ -81,84 +81,93 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
                 shippingId: upsellData.shippingId,
                 campaignId: upsellData.campaignId,
                 creditCardType: 'paypal',
-                // upsellData.step is a number, ensure string concatenation is correct
                 alt_pay_return_url: `${upsellData.siteBaseUrl || state.siteBaseUrl}/upsell${upsellData.step + 1}?internal_txn_id=${internal_txn_id}&sticky_url_id=${stickyUrlId}`,
                 ipAddress: request.headers.get('CF-Connecting-IP') || '127.0.0.1',
-                tranType: "Sale", 
+                tranType: "Sale",
             };
-            console.log(`[UpsellHandler] PayPal new_order payload for ${internal_txn_id}:`, paypalUpsellPayload);
+            console.log(`[UpsellHandler] PayPal new_order payload for ${kvKey}:`, paypalUpsellPayload);
             const result: StickyPayload = await callStickyNewOrder(stickyBaseUrl, paypalUpsellPayload, env);
-            console.log(`[UpsellHandler] PayPal new_order result for ${internal_txn_id}:`, result);
+            console.log(`[UpsellHandler] PayPal new_order result for ${kvKey}:`, result);
 
-            if (result.success === false || !result._ok || (!result.order_id && !result.gateway_response?.redirect_url)) {
-                 console.error(`[UpsellHandler] PayPal new_order failed for ${internal_txn_id}:`, result.error_message || result.decline_reason || 'Unknown error');
-                 return addCorsHeaders(new Response(JSON.stringify({
+            if (result.gateway_response?.redirect_url) {
+                // Path A: PayPal redirect needed
+                console.log(`[UpsellHandler] PayPal new_order for upsell requires redirect for ${kvKey}. URL: ${result.gateway_response.redirect_url}`);
+                // if (state) { // Consider updating state status here if needed
+                //     state.status = 'paypal_upsell_redirect_pending'; // Requires adding to PixelStateStatus type
+                //     ctx.waitUntil(env.PIXEL_STATE.put(kvKey, JSON.stringify(state)));
+                // }
+                return addCorsHeaders(new Response(JSON.stringify({
+                    success: true,
+                    redirect_url: result.gateway_response.redirect_url,
+                    message: "Redirect to PayPal for upsell approval.",
+                    orderId: result.order_id,
+                    internal_txn_id: internal_txn_id,
+                }), { status: 200 }), request);
+            
+            } else if (result.success === true && result._ok === true && result.order_id) {
+                // Path B: PayPal processed directly by Sticky.io
+                console.log(`[UpsellHandler] PayPal upsell processed directly by Sticky.io for ${kvKey}. New Order ID: ${result.order_id}`);
+                const newUpsellOrderId = result.order_id;
+                const updatedState: PixelState = {
+                    ...state,
+                    stickyOrderId: newUpsellOrderId || state.stickyOrderId,
+                    gatewayId: result.gateway_id || state.gatewayId,
+                    status: 'paypal_upsell_completed',
+                };
+                await env.PIXEL_STATE.put(kvKey, JSON.stringify(updatedState));
+                console.log(`[UpsellHandler] PIXEL_STATE updated after direct PayPal upsell for ${kvKey}.`);
+            
+                await triggerUpsellActions(internal_txn_id, upsellData.step, result, env, ctx, request);
+                
+                return addCorsHeaders(new Response(JSON.stringify({
+                    success: true,
+                    message: 'PayPal upsell processed directly and successfully.',
+                    orderId: newUpsellOrderId,
+                    data: result,
+                    internal_txn_id: internal_txn_id,
+                }), { status: 200 }), request);
+            
+            } else {
+                // Path C: Error or unexpected response
+                console.error(`[UpsellHandler] PayPal new_order failed or returned unexpected state for ${kvKey}. Result:`, result);
+                const errMsg = result.error_message || result.decline_reason || 'PayPal upsell initiation failed: No redirect URL and no clear order confirmation from payment processor.';
+                return addCorsHeaders(new Response(JSON.stringify({
                     success: false,
-                    message: result.error_message || result.decline_reason || 'PayPal upsell order placement failed.',
+                    message: errMsg,
                     data: result,
                     internal_txn_id: internal_txn_id,
                 }), { status: result._status || 400 }), request);
             }
-            
-            if (result.gateway_response?.redirect_url) {
-                console.log(`[UpsellHandler] PayPal new_order for upsell requires redirect for ${internal_txn_id}. URL: ${result.gateway_response.redirect_url}`);
-                return addCorsHeaders(new Response(JSON.stringify({
-                    success: true, 
-                    redirect_url: result.gateway_response.redirect_url,
-                    message: "Redirect to PayPal for upsell approval.",
-                    internal_txn_id: internal_txn_id,
-                }), { status: 200 }), request);
-            }
-
-            const newUpsellOrderId = result.order_id;
-            const updatedState: PixelState = {
-                ...state,
-                stickyOrderId: newUpsellOrderId || state.stickyOrderId, // Update current stickyOrderId with the new one from PayPal upsell
-                gatewayId: result.gateway_id || state.gatewayId, // Update gatewayId if provided
-                status: 'upsell_processed',
-            };
-            await env.PIXEL_STATE.put(internal_txn_id, JSON.stringify(updatedState));
-            console.log(`[UpsellHandler] PIXEL_STATE updated after PayPal upsell for ${internal_txn_id}. New order ID: ${newUpsellOrderId}`);
-
-            // upsellData.step is already a number
-            await triggerUpsellActions(internal_txn_id, upsellData.step, result, env, ctx, request);
-            
-            return addCorsHeaders(new Response(JSON.stringify({
-                success: true,
-                message: 'PayPal upsell processed successfully.',
-                orderId: newUpsellOrderId, 
-                data: result,
-                internal_txn_id: internal_txn_id,
-            }), { status: 200 }), request);
 
         } else {
-            console.log(`[UpsellHandler] Processing Card upsell for internal_txn_id: ${internal_txn_id}`);
+            // Card Upsell Flow
+            console.log(`[UpsellHandler] Processing Card upsell for ${kvKey}`);
             // For card upsells, we need the previous order ID (initial or from a prior upsell)
             const previousOrderIdForUpsell = state.stickyOrderId || state.stickyOrderId_initial;
             if (!previousOrderIdForUpsell) {
-                console.error(`[UpsellHandler] Missing previous order ID for card upsell. internal_txn_id: ${internal_txn_id}`);
-                return addCorsHeaders(new Response(JSON.stringify({ 
-                    success: false, 
+                console.error(`[UpsellHandler] Missing previous order ID for card upsell. ${kvKey}`);
+                return addCorsHeaders(new Response(JSON.stringify({
+                    success: false,
                     message: 'Missing previous order ID for card upsell.',
                     internal_txn_id: internal_txn_id,
                 }), { status: 400 }), request);
             }
 
             const cardUpsellPayload = {
-                previousOrderId: previousOrderIdForUpsell, 
+                previousOrderId: previousOrderIdForUpsell,
                 campaignId: upsellData.campaignId,
                 offers: upsellData.offers,
                 shippingId: upsellData.shippingId,
                 ipAddress: request.headers.get('CF-Connecting-IP') || '127.0.0.1',
-                gatewayId: upsellData.forceGatewayId || state.gatewayId, 
+                gatewayId: upsellData.forceGatewayId || state.gatewayId,
                 preserve_gateway: upsellData.preserve_gateway || "1",
             };
-            console.log(`[UpsellHandler] Card new_upsell payload for ${internal_txn_id}:`, cardUpsellPayload);
+            console.log(`[UpsellHandler] Card new_upsell payload for ${kvKey}:`, cardUpsellPayload);
             const result: StickyPayload = await callStickyUpsell(stickyBaseUrl, cardUpsellPayload, env);
-            console.log(`[UpsellHandler] Card new_upsell result for ${internal_txn_id}:`, result);
+            console.log(`[UpsellHandler] Card new_upsell result for ${kvKey}:`, result);
             
             if (result.success === false || !result._ok || !result.order_id) {
-                 console.error(`[UpsellHandler] Card new_upsell failed for ${internal_txn_id}:`, result.error_message || result.decline_reason || 'Unknown error');
+                 console.error(`[UpsellHandler] Card new_upsell failed for ${kvKey}:`, result.error_message || result.decline_reason || 'Unknown error');
                  return addCorsHeaders(new Response(JSON.stringify({
                     success: false,
                     message: result.error_message || result.decline_reason || 'Card upsell placement failed.',
@@ -167,52 +176,49 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
                 }), { status: result._status || 400 }), request);
             }
 
-            const updatedState: PixelState = { 
-                ...state, 
+            const updatedState: PixelState = {
+                ...state,
                 status: 'upsell_processed',
-                // For card upsells, stickyOrderId usually remains the same as previousOrderId.
-                // If Sticky.io can return a *new* order_id for an upsell even on card, update state.stickyOrderId here.
-                // For now, assuming it's the same.
-                // stickyOrderId: result.order_id || state.stickyOrderId, 
-                gatewayId: result.gateway_id || state.gatewayId, // Update gatewayId if changed/provided
+                gatewayId: result.gateway_id || state.gatewayId,
             };
-            await env.PIXEL_STATE.put(internal_txn_id, JSON.stringify(updatedState));
-            console.log(`[UpsellHandler] PIXEL_STATE updated after Card upsell for ${internal_txn_id}. Order ID: ${result.order_id}`);
+            await env.PIXEL_STATE.put(kvKey, JSON.stringify(updatedState));
+            console.log(`[UpsellHandler] PIXEL_STATE updated after Card upsell for ${kvKey}. Order ID: ${result.order_id}`);
 
-            // upsellData.step is already a number
             await triggerUpsellActions(internal_txn_id, upsellData.step, result, env, ctx, request);
 
             return addCorsHeaders(new Response(JSON.stringify({
                 success: true,
                 message: 'Card upsell processed successfully.',
-                orderId: result.order_id, 
+                orderId: result.order_id,
                 data: result,
                 internal_txn_id: internal_txn_id,
             }), { status: 200 }), request);
         }
     } catch (error: any) {
-        console.error(`[UpsellHandler] Uncaught error for internal_txn_id ${internal_txn_id || 'unknown'}:`, error.message, error.stack);
-        // Attempt to update state to error if possible
-        if (internal_txn_id) {
+        // Use kvKey if internal_txn_id is available, otherwise log 'unknown_txn' for the key part
+        const kvKeyForError = internal_txn_id ? `txn_${internal_txn_id}` : 'unknown_txn';
+        console.error(`[UpsellHandler] Uncaught error for ${kvKeyForError}:`, error.message, error.stack);
+        if (internal_txn_id) { // Only try to update state if we have an id
             try {
-                const currentStateString = await env.PIXEL_STATE.get(internal_txn_id);
+                // Use kvKeyForError for consistency in error handling KV operations
+                const currentStateString = await env.PIXEL_STATE.get(kvKeyForError);
                 if (currentStateString) {
                     let currentState: PixelState = JSON.parse(currentStateString);
                     currentState.status = 'error';
                     currentState.lastError = { timestamp: new Date().toISOString(), message: error.message, handler: 'upsell' };
                     ctx.waitUntil(
-                        env.PIXEL_STATE.put(internal_txn_id, JSON.stringify(currentState))
-                            .catch(kvErr => console.error(`[UpsellHandler] Error handling KV PUT failed for ${internal_txn_id}: ${kvErr.message}`))
+                        env.PIXEL_STATE.put(kvKeyForError, JSON.stringify(currentState))
+                            .catch(kvErr => console.error(`[UpsellHandler] Error handling KV PUT failed for ${kvKeyForError}: ${kvErr.message}`))
                     );
                 }
             } catch (kvError) {
-                console.error(`[UpsellHandler] Failed to update state to 'error' during error handling for ${internal_txn_id}:`, kvError);
+                console.error(`[UpsellHandler] Failed to update state to 'error' during error handling for ${kvKeyForError}:`, kvError);
             }
         }
-        return addCorsHeaders(new Response(JSON.stringify({ 
-            success: false, 
+        return addCorsHeaders(new Response(JSON.stringify({
+            success: false,
             message: 'Internal server error in upsell handler.',
-            internal_txn_id: internal_txn_id,
+            internal_txn_id: internal_txn_id, // Return the original id if available
         }), { status: 500 }), request);
     }
 }

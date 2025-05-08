@@ -157,40 +157,40 @@ export async function triggerInitialActions(
   context: ExecutionContext,
   request: CfRequest // The original incoming request to the worker endpoint
 ): Promise<TriggerActionsResult> {
-  const stateKey = internal_txn_id; 
+  const kvKey = `txn_${internal_txn_id}`; // Use prefixed key
   const clientSideActions: string[] = [];
   const serverSidePromises: Promise<void>[] = [];
 
   try {
-    console.log(`[triggerInitialActions] Attempting to get state for key: ${stateKey}`);
-    const stateString = await env.PIXEL_STATE.get(stateKey);
+    console.log(`[triggerInitialActions] Attempting to get state for key: ${kvKey}`);
+    const stateString = await env.PIXEL_STATE.get(kvKey);
     if (!stateString) {
-      console.error('[triggerInitialActions] State not found for txn', { internal_txn_id, stateKeyUsed: stateKey }); 
+      console.error('[triggerInitialActions] State not found for txn', { internal_txn_id, stateKeyUsed: kvKey });
       return { clientSideActions: [] };
     }
     const state: PixelState = JSON.parse(stateString);
-    console.log(`[triggerInitialActions] State found for ${stateKey}:`, state);
+    console.log(`[triggerInitialActions] State found for ${kvKey}:`, state);
 
 
-    const siteId = state.siteId; 
+    const siteId = state.siteId;
     if (!siteId) {
-      console.error('[triggerInitialActions] siteId missing from state', { internal_txn_id });
+      console.error('[triggerInitialActions] siteId missing from state', { internal_txn_id, stateKeyUsed: kvKey });
       return { clientSideActions: [] };
     }
 
-    if (state.processedInitial === true) { 
-      console.log(`[triggerInitialActions] Already processed for ${internal_txn_id}`);
+    if (state.processedInitial === true) {
+      console.log(`[triggerInitialActions] Already processed for ${internal_txn_id} (key: ${kvKey})`);
       return { clientSideActions: [] };
     }
 
-    const updatedStateFields: Partial<PixelState> = { 
-    	processedInitial: true, 
-    	status: 'processed', 
+    const updatedStateFields: Partial<PixelState> = {
+    	processedInitial: true,
+    	status: 'processed',
     };
     context.waitUntil(
-      env.PIXEL_STATE.put(stateKey, JSON.stringify({ ...state, ...updatedStateFields }))
-        .then(() => console.log(`[triggerInitialActions] Successfully updated PIXEL_STATE for ${stateKey} to mark as processed.`))
-        .catch(err => console.error('[triggerInitialActions] Failed to update KV state', { internal_txn_id, stateKeyUsed: stateKey, error: err.message })) 
+      env.PIXEL_STATE.put(kvKey, JSON.stringify({ ...state, ...updatedStateFields }))
+        .then(() => console.log(`[triggerInitialActions] Successfully updated PIXEL_STATE for ${kvKey} to mark as processed.`))
+        .catch(err => console.error('[triggerInitialActions] Failed to update KV state', { internal_txn_id, stateKeyUsed: kvKey, error: err.message }))
     );
 
     const payoutSteps = 1; // Placeholder
@@ -320,43 +320,43 @@ export async function triggerUpsellActions(
   context: ExecutionContext,
   request: CfRequest // The original incoming request to the worker endpoint
 ): Promise<TriggerActionsResult> {
-  const stateKey = internal_txn_id; 
+  const kvKey = `txn_${internal_txn_id}`; // Use prefixed key
   const clientSideActions: string[] = [];
   const serverSidePromises: Promise<void>[] = [];
   
-  const processedFlagKey = `processed_Upsell_${upsellStepNum}` as keyof PixelState; 
+  const processedFlagKey = `processed_Upsell_${upsellStepNum}` as keyof PixelState;
 
   try {
-    console.log(`[triggerUpsellActions] Attempting to get state for key: ${stateKey}, step: ${upsellStepNum}`);
-    const stateString = await env.PIXEL_STATE.get(stateKey);
+    console.log(`[triggerUpsellActions] Attempting to get state for key: ${kvKey}, step: ${upsellStepNum}`);
+    const stateString = await env.PIXEL_STATE.get(kvKey);
     if (!stateString) {
-      console.error('[triggerUpsellActions] State not found for txn', { internal_txn_id, upsellStepNum, stateKeyUsed: stateKey }); 
+      console.error('[triggerUpsellActions] State not found for txn', { internal_txn_id, upsellStepNum, stateKeyUsed: kvKey });
       return { clientSideActions: [] };
     }
     const state: PixelState = JSON.parse(stateString);
-    console.log(`[triggerUpsellActions] State found for ${stateKey}:`, state);
+    console.log(`[triggerUpsellActions] State found for ${kvKey}:`, state);
 
-    const siteId = state.siteId; 
+    const siteId = state.siteId;
     if (!siteId) {
-      console.error('[triggerUpsellActions] siteId missing from state', { internal_txn_id, upsellStepNum });
+      console.error('[triggerUpsellActions] siteId missing from state', { internal_txn_id, upsellStepNum, stateKeyUsed: kvKey });
       return { clientSideActions: [] };
     }
 
     if (state[processedFlagKey] === true) {
-      console.log(`[triggerUpsellActions] Step ${upsellStepNum} already processed for ${internal_txn_id}`);
+      console.log(`[triggerUpsellActions] Step ${upsellStepNum} already processed for ${internal_txn_id} (key: ${kvKey})`);
       return { clientSideActions: [] };
     }
 
-    const updatedStepStateFields: Partial<PixelState> = { 
+    const updatedStepStateFields: Partial<PixelState> = {
       [processedFlagKey]: true,
     };
     context.waitUntil(
-      env.PIXEL_STATE.put(stateKey, JSON.stringify({ ...state, ...updatedStepStateFields }))
-        .then(() => console.log(`[triggerUpsellActions] Successfully updated PIXEL_STATE for ${stateKey} to mark upsell step ${upsellStepNum} as processed.`))
-        .catch(err => console.error('[triggerUpsellActions] Failed to update KV state for upsell step', { internal_txn_id, upsellStepNum, stateKeyUsed: stateKey, error: err.message }))
+      env.PIXEL_STATE.put(kvKey, JSON.stringify({ ...state, ...updatedStepStateFields }))
+        .then(() => console.log(`[triggerUpsellActions] Successfully updated PIXEL_STATE for ${kvKey} to mark upsell step ${upsellStepNum} as processed.`))
+        .catch(err => console.error('[triggerUpsellActions] Failed to update KV state for upsell step', { internal_txn_id, upsellStepNum, stateKeyUsed: kvKey, error: err.message }))
     );
 
-    const isScrub = false; 
+    const isScrub = false;
     const eventName = `upsell${upsellStepNum}`;
     const actionKeys = await getActionKeys(siteId, eventName, isScrub, request, env);
 

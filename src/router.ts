@@ -110,8 +110,9 @@ export async function routeRequest(request: Request, env: Env, ctx: ExecutionCon
             console.log(`[Router] Routing to Page Pixels Handler`);
             return await handlePagePixels(request, env, ctx);
         }
-        else if (pathname === '/checkout/paypal-return' && method === 'GET') {
-            console.log(`[Router] Routing to PayPal Return Handler`);
+        // Corrected path to match what alt_pay_return_url uses
+        else if (pathname === '/api/checkout/paypal-return' && method === 'GET') {
+            console.log(`[Router] Routing to PayPal Return Handler for /api/checkout/paypal-return`);
             return await handlePaypalReturn(request, env, ctx);
         }
         else if (pathname.startsWith('/admin/api/')) {
