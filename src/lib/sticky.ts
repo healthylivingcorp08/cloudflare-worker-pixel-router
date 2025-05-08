@@ -71,7 +71,24 @@ async function callStickyApi(baseUrl: string, endpoint: string, payload: any, en
         // console.log(`[StickyLib] Raw Response Body from ${endpoint} (isAlternativePaymentNewOrder: ${isAlternativePaymentNewOrder}):`, responseBodyText.substring(0,1000)); // For debugging
 
         if (isAlternativePaymentNewOrder) {
-            console.log(`[StickyLib] Handling HTML response for alternative payment on ${endpoint}.`);
+            console.log(`[StickyLib] Handling response for alternative payment on ${endpoint}.`);
+
+            // First, try to parse as JSON to catch potential API errors from Sticky.io
+            try {
+                const potentialJsonError = JSON.parse(responseBodyText);
+                // Check for common Sticky.io error indicators
+                if (potentialJsonError && (potentialJsonError.error_found === "1" || potentialJsonError.status === "ERROR" || (potentialJsonError.response_code && Number(potentialJsonError.response_code) > 1))) {
+                    console.warn(`[StickyLib] Received JSON error from ${endpoint} during alternative payment flow. Body sample:`, responseBodyText.substring(0,500));
+                    potentialJsonError._status = response.status;
+                    // If Sticky returns a 200 status but the payload indicates an error, set _ok to false.
+                    potentialJsonError._ok = response.ok && !(potentialJsonError.error_found === "1" || potentialJsonError.status === "ERROR");
+                    return potentialJsonError;
+                }
+            } catch (e) {
+                // Not JSON, or malformed JSON. Proceed to HTML check.
+                // console.log(`[StickyLib] Response for alternative payment on ${endpoint} is not a JSON error, proceeding to check for HTML redirect.`);
+            }
+
             // For alternative payment new_order, expect HTML and try to extract redirect URL
             // Example: window.location.replace('https://www.sandbox.paypal.com/checkoutnow?token=...');
             const redirectUrlRegex = /window\.location\.replace\s*\(\s*['"]([^'"]+)['"]\s*\)/;
@@ -82,16 +99,17 @@ async function callStickyApi(baseUrl: string, endpoint: string, payload: any, en
                 console.log(`[StickyLib] Extracted PayPal redirect URL: ${extractedUrl}`);
                 return {
                     _status: response.status,
-                    _ok: response.ok,
+                    _ok: response.ok, // If redirect is found and status is 2xx, it's OK.
                     gateway_response: { redirect_url: extractedUrl }
                 };
             } else {
-                console.error(`[StickyLib] Failed to extract redirect URL from HTML response from ${endpoint}. Body sample:`, responseBodyText.substring(0, 500));
+                // This means it wasn't a JSON error handled above, and it's not HTML with a redirect.
+                console.error(`[StickyLib] Failed to extract redirect URL from HTML, or response was not expected format from ${endpoint}. Body sample:`, responseBodyText.substring(0, 500));
                 return {
                     _status: response.status,
-                    _ok: response.ok,
+                    _ok: false, // If we expected a redirect and didn't get one (or got an unhandled format), it's not 'ok'.
                     _rawBody: responseBodyText,
-                    error_message: `Failed to extract redirect URL from HTML response. Raw sample: ${responseBodyText.substring(0, 200)}...`
+                    error_message: `Failed to extract redirect URL or unexpected response format. Raw sample: ${responseBodyText.substring(0, 200)}...`
                 };
             }
         } else {

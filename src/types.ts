@@ -25,6 +25,7 @@ export interface Env {
 
 export interface CustomerAddress {
     street?: string;
+    street2?: string; // Added street2
     city?: string;
     state?: string; // Province/Region for non-US
     zip?: string;   // Postal code
@@ -45,7 +46,8 @@ export interface PixelState {
     customerLastName?: string;
     customerEmail?: string;
     customerPhone?: string;
-    customerAddress?: CustomerAddress; // Billing address, can also be used for shipping if same
+    customerAddress?: CustomerAddress; // Billing address
+    customerShippingAddress?: CustomerAddress; // Shipping address, added
 
     // Payment and Order details
     paymentMethod_initial?: 'card' | 'paypal' | 'other'; // Initial payment method chosen
@@ -64,7 +66,16 @@ export interface PixelState {
     processedInitial?: boolean; // True if initial checkout actions have been processed
     processed_Upsell_1?: boolean; // True if upsell step 1 actions processed
     processed_Upsell_2?: boolean; // True if upsell step 2 actions processed
+    processed_Upsell_3?: boolean; // True if upsell step 3 actions processed
     // Add more processed_Upsell_N flags as needed
+
+    // Optional: Store specific order IDs and timestamps for each upsell step
+    stickyOrderId_Upsell1?: string;
+    timestamp_processed_Upsell_1?: string;
+    stickyOrderId_Upsell2?: string;
+    timestamp_processed_Upsell_2?: string;
+    stickyOrderId_Upsell3?: string;
+    timestamp_processed_Upsell_3?: string;
 
     // Optional: Store original request details if needed for retries or context
     originalRequestId?: string; // e.g., from CF-Request-ID header

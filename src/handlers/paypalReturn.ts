@@ -103,21 +103,39 @@ export async function handlePaypalReturn(request: Request, env: Env, ctx: Execut
         }
 
         console.log('[PayPalReturnHandler] Calling Sticky.io order_view for key:', kvKey, { stickyOrderId: state.stickyOrderId_initial });
-        const orderViewResponse = await callStickyOrderView(stickyBaseUrl, [state.stickyOrderId_initial!], env);
+        let orderViewResponse = await callStickyOrderView(stickyBaseUrl, [state.stickyOrderId_initial!], env); // Changed const to let
 
         let isOrderSuccessful = false;
         let actualStickyOrderStatus: string | undefined = undefined;
 
         if (orderViewResponse && orderViewResponse.response_code === '100') {
-            actualStickyOrderStatus = orderViewResponse.order_status; // e.g., "2"
-            // Sticky.io order_status '2' means 'Approved'.
-            if (actualStickyOrderStatus === '2') {
+            actualStickyOrderStatus = orderViewResponse.order_status;
+            if (String(actualStickyOrderStatus) === '2') {
                 isOrderSuccessful = true;
+                console.log(`[PayPalReturnHandler] Initial Sticky.io order_view successful. Status: '${actualStickyOrderStatus}'.`);
+            } else {
+                console.warn(`[PayPalReturnHandler] Initial order_view for ${state.stickyOrderId_initial} status: '${actualStickyOrderStatus}'. Retrying after 2s delay.`);
+                await new Promise(resolve => setTimeout(resolve, 2000)); // 2-second delay
+
+                let retryOrderViewResponse = await callStickyOrderView(stickyBaseUrl, [state.stickyOrderId_initial!], env);
+                console.log(`[PayPalReturnHandler] Retry order_view response for ${state.stickyOrderId_initial}:`, JSON.stringify(retryOrderViewResponse).substring(0, 500) + (JSON.stringify(retryOrderViewResponse).length > 500 ? '...' : ''));
+
+                if (retryOrderViewResponse && retryOrderViewResponse.response_code === '100') {
+                    actualStickyOrderStatus = retryOrderViewResponse.order_status; // Update with retry status
+                    if (String(actualStickyOrderStatus) === '2') {
+                        isOrderSuccessful = true;
+                        orderViewResponse = retryOrderViewResponse; // Use the successful retry response data
+                        console.log(`[PayPalReturnHandler] Retry Sticky.io order_view successful. Status: '${actualStickyOrderStatus}'.`);
+                    } else {
+                        console.warn(`[PayPalReturnHandler] Retry Sticky.io order_view still not approved. Status: '${actualStickyOrderStatus}'.`);
+                    }
+                } else {
+                    console.warn(`[PayPalReturnHandler] Retry Sticky.io order_view API call failed or malformed. Response:`, JSON.stringify(retryOrderViewResponse).substring(0, 500) + (JSON.stringify(retryOrderViewResponse).length > 500 ? '...' : ''));
+                }
             }
-            console.log(`[PayPalReturnHandler] Sticky.io order_view response_code 100. Order status from API: '${actualStickyOrderStatus}'. Determined isOrderSuccessful: ${isOrderSuccessful}`);
         } else {
-            // API call itself failed or returned an error response_code or was malformed
-            console.warn(`[PayPalReturnHandler] Sticky.io order_view API call did not return response_code 100 or was malformed. Response:`, JSON.stringify(orderViewResponse));
+            // Initial API call itself failed or returned an error response_code or was malformed
+            console.warn(`[PayPalReturnHandler] Initial Sticky.io order_view API call did not return response_code 100 or was malformed. Response:`, JSON.stringify(orderViewResponse).substring(0, 500) + (JSON.stringify(orderViewResponse).length > 500 ? '...' : ''));
             actualStickyOrderStatus = orderViewResponse?.order_status || 'unknown_api_error';
             // isOrderSuccessful remains false
         }
@@ -140,13 +158,59 @@ export async function handlePaypalReturn(request: Request, env: Env, ctx: Execut
                 console.warn('[PayPalReturnHandler] Could not extract confirmed_order_id from successful Sticky.io order_view response (response_code 100) for key:', kvKey, { orderViewResponse });
             }
 
+            // Store customer details from orderViewResponse into state for upsells
+            state.customerFirstName = orderViewResponse.billing_first_name;
+            state.customerLastName = orderViewResponse.billing_last_name;
+            state.customerEmail = orderViewResponse.email_address;
+            state.customerPhone = orderViewResponse.customers_telephone; // Added phone
+
+            state.customerAddress = {
+                street: orderViewResponse.billing_street_address,
+                street2: orderViewResponse.billing_street_address2,
+                city: orderViewResponse.billing_city,
+                state: orderViewResponse.billing_state,
+                zip: orderViewResponse.billing_postcode,
+                country: orderViewResponse.billing_country,
+            };
+            // Assuming shipping is same as billing from initial PayPal order for now,
+            // or that Sticky.io new_upsell might not need full shipping if it's based on previousOrderId
+            state.customerShippingAddress = {
+                street: orderViewResponse.shipping_street_address,
+                street2: orderViewResponse.shipping_street_address2,
+                city: orderViewResponse.shipping_city,
+                state: orderViewResponse.shipping_state,
+                zip: orderViewResponse.shipping_postcode,
+                country: orderViewResponse.shipping_country,
+            };
+            // Note: orderViewResponse.shipping_first_name and shipping_last_name are available
+            // if they need to be stored separately in PixelState (e.g., as customerShippingFirstName).
+            // For now, customerFirstName/LastName (from billing) will be used by upsell handler.
+            
+            // Ensure gatewayId from the successful order_view is stored if not already from paypal return
+            if (orderViewResponse.gateway_id && !state.gatewayIdFromPaypalReturn) {
+                 state.gatewayId = String(orderViewResponse.gateway_id); // Store the gateway ID from the confirmed order
+                 console.log(`[PayPalReturnHandler] Stored gatewayId ${state.gatewayId} from order_view for key: ${kvKey}`);
+            } else if (state.gatewayIdFromPaypalReturn) {
+                state.gatewayId = state.gatewayIdFromPaypalReturn; // Prefer the one from PayPal return if available
+                 console.log(`[PayPalReturnHandler] Using gatewayId ${state.gatewayId} from PayPal return params for key: ${kvKey}`);
+            }
+
+
+            // Persist state with customer details BEFORE calling triggerInitialActions,
+            // as triggerInitialActions itself will save the state again.
+            // This ensures customer details are available if triggerInitialActions needs them or for subsequent upsell.
+            await env.PIXEL_STATE.put(kvKey, JSON.stringify(state));
+            console.log('[PayPalReturnHandler] Updated PIXEL_STATE with customer details from order_view before triggering actions for key:', kvKey);
+
+
             // Pass internal_txn_id (raw) to triggerInitialActions, as it will construct its own kvKey internally
             // Pass the raw orderViewResponse as it contains all order details needed by actions
             await triggerInitialActions(internal_txn_id, orderViewResponse, env, ctx, request);
             
             // After actions, state in KV is updated by triggerInitialActions. Re-fetch for redirect using kvKey.
+            // This re-fetch is important because triggerInitialActions modifies and saves the state.
             const finalStateString = await env.PIXEL_STATE.get(kvKey);
-            const finalState: PixelState = finalStateString ? JSON.parse(finalStateString) : state;
+            const finalState: PixelState = finalStateString ? JSON.parse(finalStateString) : state; // Use in-memory state as fallback
 
             console.log('[PayPalReturnHandler] Initial actions triggered for key:', kvKey);
 
