@@ -102,9 +102,23 @@ export async function handlePaypalReturn(request: Request, env: Env, ctx: Execut
         // Critical check for the order ID we will actually use for verification
         if (!orderIdForVerification) {
             console.error('[PayPalReturnHandler] Critical: Missing orderIdForVerification for order_view for key:', kvKey, 'State:', JSON.stringify(state));
-            const errorRedirectBase = state.siteBaseUrl || url.origin;
-            const errorRedirectUrl = new URL(errorRedirectBase);
-            errorRedirectUrl.pathname = '/checkout';
+            let errorRedirectUrl: URL;
+            if (state.originalRequestUrl) {
+                try {
+                    errorRedirectUrl = new URL(state.originalRequestUrl);
+                    errorRedirectUrl.search = ''; // Clear existing params from original URL
+                } catch (e) {
+                    console.error(`[PayPalReturnHandler] Invalid state.originalRequestUrl for missing orderId: ${state.originalRequestUrl}`, e);
+                    errorRedirectUrl = new URL(state.siteBaseUrl || url.origin);
+                    errorRedirectUrl.pathname = '/checkout'; // Fallback path
+                }
+            } else if (state.siteBaseUrl) {
+                errorRedirectUrl = new URL(state.siteBaseUrl);
+                errorRedirectUrl.pathname = '/checkout'; // Fallback path
+            } else {
+                errorRedirectUrl = new URL(url.origin);
+                errorRedirectUrl.pathname = '/checkout'; // Fallback path
+            }
             errorRedirectUrl.searchParams.set('error', 'paypal_missing_order_id_for_verification');
             if (internal_txn_id) errorRedirectUrl.searchParams.set('internal_txn_id', internal_txn_id);
             if (stickyUrlIdFromParam) errorRedirectUrl.searchParams.set('sticky_url_id', stickyUrlIdFromParam);
@@ -310,9 +324,23 @@ export async function handlePaypalReturn(request: Request, env: Env, ctx: Execut
                     .catch(err => console.error('[PayPalReturnHandler] Failed to update KV state for key:', kvKey, { error: err.message }))
             );
             
-            const frontendErrorRedirectBase = state.siteBaseUrl || url.origin; // Best effort for base URL
-            const errorRedirectUrl = new URL(frontendErrorRedirectBase);
-            errorRedirectUrl.pathname = '/checkout'; // User can change this if they want errors on /upsell1
+            let errorRedirectUrl: URL;
+            if (state.originalRequestUrl) {
+                try {
+                    errorRedirectUrl = new URL(state.originalRequestUrl);
+                    errorRedirectUrl.search = ''; // Clear existing params from original URL
+                } catch (e) {
+                    console.error(`[PayPalReturnHandler] Invalid state.originalRequestUrl for order not successful: ${state.originalRequestUrl}`, e);
+                    errorRedirectUrl = new URL(state.siteBaseUrl || url.origin);
+                    errorRedirectUrl.pathname = '/checkout'; // Fallback path
+                }
+            } else if (state.siteBaseUrl) {
+                errorRedirectUrl = new URL(state.siteBaseUrl);
+                errorRedirectUrl.pathname = '/checkout'; // Fallback path
+            } else {
+                errorRedirectUrl = new URL(url.origin);
+                errorRedirectUrl.pathname = '/checkout'; // Fallback path
+            }
             errorRedirectUrl.searchParams.set('error', errorParam);
             if (internal_txn_id) errorRedirectUrl.searchParams.set('internal_txn_id', internal_txn_id);
             if (state.stickyOrderId_initial) errorRedirectUrl.searchParams.set('orderId', state.stickyOrderId_initial);
@@ -326,23 +354,38 @@ export async function handlePaypalReturn(request: Request, env: Env, ctx: Execut
         console.error('PayPal Return Handler: Uncaught error', { internal_txn_id, error: error.message, stack: error.stack });
         
         // Attempt to retrieve state to get siteBaseUrl for a more graceful error redirect
-        let frontendGenericErrorBase = url.origin; // Default to worker origin
-        if (internal_txn_id) {
+        let genericErrorUrl: URL;
+        let stateForError: PixelState | undefined = undefined;
+        // kvKey is defined in the outer scope based on internal_txn_id
+
+        if (internal_txn_id) { // Check if internal_txn_id is available to ensure kvKey is valid
             try {
-                const stateStringForError = await env.PIXEL_STATE.get(kvKey); // Use kvKey
+                const stateStringForError = await env.PIXEL_STATE.get(kvKey);
                 if (stateStringForError) {
-                    const stateForError: PixelState = JSON.parse(stateStringForError);
-                    if (stateForError.siteBaseUrl) {
-                        frontendGenericErrorBase = stateForError.siteBaseUrl;
-                    }
+                    stateForError = JSON.parse(stateStringForError) as PixelState;
                 }
             } catch (e) {
-                console.error('[PayPalReturnHandler] Could not fetch state during catch block:', e);
+                console.error('[PayPalReturnHandler] Could not fetch state during catch block for generic error:', e);
             }
         }
 
-        const genericErrorUrl = new URL(frontendGenericErrorBase);
-        genericErrorUrl.pathname = '/checkout'; // Or a more specific error page like /error
+        if (stateForError?.originalRequestUrl) {
+            try {
+                genericErrorUrl = new URL(stateForError.originalRequestUrl);
+                genericErrorUrl.search = ''; // Clear existing params from original URL
+            } catch (e) {
+                console.error(`[PayPalReturnHandler] Invalid state.originalRequestUrl in uncaught error: ${stateForError.originalRequestUrl}`, e);
+                const base = stateForError?.siteBaseUrl || url.origin;
+                genericErrorUrl = new URL(base);
+                genericErrorUrl.pathname = '/checkout'; // Fallback path
+            }
+        } else if (stateForError?.siteBaseUrl) {
+            genericErrorUrl = new URL(stateForError.siteBaseUrl);
+            genericErrorUrl.pathname = '/checkout'; // Fallback path
+        } else {
+            genericErrorUrl = new URL(url.origin);
+            genericErrorUrl.pathname = '/checkout'; // Fallback path
+        }
         genericErrorUrl.searchParams.set('error', 'paypal_internal_error');
         if (internal_txn_id) genericErrorUrl.searchParams.set('internal_txn_id', internal_txn_id);
         if (stickyUrlIdFromParam) genericErrorUrl.searchParams.set('sticky_url_id', stickyUrlIdFromParam);
