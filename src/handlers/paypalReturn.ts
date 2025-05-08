@@ -48,26 +48,35 @@ export async function handlePaypalReturn(request: Request, env: Env, ctx: Execut
         const stickyOrderIdFromPaypalReturn = url.searchParams.get('orderId');
         const gatewayIdFromPaypalReturn = url.searchParams.get('gatewayId');
 
+        // Determine the order ID to use for verification, prioritizing PayPal's return if valid.
+        let orderIdForVerification = state.stickyOrderId_initial; // Default to what's in state
+
+        if (stickyOrderIdFromPaypalReturn && typeof stickyOrderIdFromPaypalReturn === 'string' && stickyOrderIdFromPaypalReturn.trim() !== '') {
+            console.log(`[PayPalReturnHandler] PayPal return URL provided stickyOrderId: '${stickyOrderIdFromPaypalReturn}'. This will be prioritized for order_view. Current state.stickyOrderId_initial was: '${state.stickyOrderId_initial}'. Key: ${kvKey}`);
+            orderIdForVerification = stickyOrderIdFromPaypalReturn;
+            // Update state.stickyOrderId_initial for consistency and persistence if it's different or wasn't set.
+            if (state.stickyOrderId_initial !== stickyOrderIdFromPaypalReturn) {
+                state.stickyOrderId_initial = stickyOrderIdFromPaypalReturn;
+                console.log(`[PayPalReturnHandler] Updated state.stickyOrderId_initial to '${state.stickyOrderId_initial}'. Key: ${kvKey}`);
+            }
+        } else {
+            console.log(`[PayPalReturnHandler] No valid stickyOrderId in PayPal return URL, or it matches existing. Using state.stickyOrderId_initial: '${state.stickyOrderId_initial}' for order_view. Key: ${kvKey}`);
+        }
+        
+        // Store/update other PayPal/Sticky parameters in state and persist
         if (paypalTransactionId || paypalPayerID || stickyOrderIdFromPaypalReturn || gatewayIdFromPaypalReturn) {
-            console.log('PayPal Return Handler: Found PayPal/Sticky parameters in URL for key:', kvKey, { paypalTransactionId, paypalPayerID, stickyOrderIdFromPaypalReturn, gatewayIdFromPaypalReturn });
+            console.log('PayPal Return Handler: Storing/Updating PayPal/Sticky parameters in state for key:', kvKey, { paypalTransactionId, paypalPayerID, stickyOrderIdFromPaypalReturn, gatewayIdFromPaypalReturn });
             state.paypalTransactionId = paypalTransactionId || state.paypalTransactionId;
             state.paypalPayerId = paypalPayerID || state.paypalPayerId;
+            // Store the raw param for reference, even if not used directly for orderIdForVerification logic above
             state.stickyOrderIdFromPaypalReturn = stickyOrderIdFromPaypalReturn || state.stickyOrderIdFromPaypalReturn;
             state.gatewayIdFromPaypalReturn = gatewayIdFromPaypalReturn || state.gatewayIdFromPaypalReturn;
+            // state.stickyOrderId_initial is already updated above by the orderIdForVerification logic
 
-            // If stickyOrderId_initial is not set, but we got one from PayPal return, use it for stickyOrderId_initial.
-            // This makes stickyOrderId_initial the canonical place for the order ID used in this handler's logic.
-            if (!state.stickyOrderId_initial && stickyOrderIdFromPaypalReturn) {
-                state.stickyOrderId_initial = stickyOrderIdFromPaypalReturn;
-                console.log(`[PayPalReturnHandler] Populating state.stickyOrderId_initial with value from PayPal return URL: ${state.stickyOrderId_initial} for key: ${kvKey}`);
-            }
-            
-            // Persist the updated state (including potentially newly set stickyOrderId_initial)
-            // The subsequent logic in this handler will use the in-memory 'state' object which is already updated.
             ctx.waitUntil(
                 env.PIXEL_STATE.put(kvKey, JSON.stringify(state))
-                    .then(() => console.log('PayPal Return Handler: Successfully stored PayPal/Sticky parameters (and potentially updated stickyOrderId_initial) in PIXEL_STATE for key:', kvKey))
-                    .catch(err => console.error('PayPal Return Handler: Failed to store PayPal/Sticky parameters in PIXEL_STATE for key:', kvKey, { error: err.message }))
+                    .then(() => console.log(`PayPal Return Handler: Successfully stored/updated PIXEL_STATE for key: ${kvKey}. stickyOrderId_initial is now: ${state.stickyOrderId_initial}`))
+                    .catch(err => console.error('PayPal Return Handler: Failed to store/update PIXEL_STATE for key:', kvKey, { error: err.message }))
             );
         } else {
             console.log('PayPal Return Handler: No new PayPal/Sticky parameters found in URL to update state with for key:', kvKey);
@@ -75,35 +84,35 @@ export async function handlePaypalReturn(request: Request, env: Env, ctx: Execut
 
         if (state.processedInitial) {
             console.log('PayPal Return Handler: Initial actions already processed for key:', kvKey);
-            // Use frontendBaseUrl for this redirect as well, if available
             const frontendBaseForProcessed = state.siteBaseUrl || url.origin;
             const nextStepUrl = new URL(frontendBaseForProcessed);
-            nextStepUrl.pathname = state.confirmedStickyOrderId ? '/confirmation' : '/upsell1'; // Adjust path as needed for frontend
+            nextStepUrl.pathname = state.confirmedStickyOrderId ? '/confirmation' : '/upsell1';
             nextStepUrl.searchParams.set('internal_txn_id', internal_txn_id);
-            if (state.stickyOrderId_initial) { // This should now be populated if it came from PayPal return
-                nextStepUrl.searchParams.set('orderId', state.stickyOrderId_initial);
+            // Use orderIdForVerification (which is now also in state.stickyOrderId_initial) for the redirect
+            if (orderIdForVerification) {
+                nextStepUrl.searchParams.set('orderId', orderIdForVerification);
             }
-            if (stickyUrlIdFromParam) { // Persist sticky_url_id
+            if (stickyUrlIdFromParam) {
                 nextStepUrl.searchParams.set('sticky_url_id', stickyUrlIdFromParam);
             }
             console.log(`[PayPalReturnHandler] Already processed, redirecting to: ${nextStepUrl.toString()} for key: ${kvKey}`);
             return Response.redirect(nextStepUrl.toString(), 302);
         }
 
-        // Check for stickyOrderId_initial again. It should be populated now if it came from PayPal return.
-        if (!state.stickyOrderId_initial) {
-            console.error('[PayPalReturnHandler] Critical: Missing stickyOrderId_initial in state even after checking PayPal return params for key:', kvKey, 'State:', JSON.stringify(state));
-            const errorRedirectBase = state.siteBaseUrl || url.origin; // Use siteBaseUrl if available
+        // Critical check for the order ID we will actually use for verification
+        if (!orderIdForVerification) {
+            console.error('[PayPalReturnHandler] Critical: Missing orderIdForVerification for order_view for key:', kvKey, 'State:', JSON.stringify(state));
+            const errorRedirectBase = state.siteBaseUrl || url.origin;
             const errorRedirectUrl = new URL(errorRedirectBase);
-            errorRedirectUrl.pathname = '/checkout'; // Or a more specific error page
+            errorRedirectUrl.pathname = '/checkout';
             errorRedirectUrl.searchParams.set('error', 'paypal_missing_order_id_for_verification');
             if (internal_txn_id) errorRedirectUrl.searchParams.set('internal_txn_id', internal_txn_id);
             if (stickyUrlIdFromParam) errorRedirectUrl.searchParams.set('sticky_url_id', stickyUrlIdFromParam);
             return Response.redirect(errorRedirectUrl.toString(), 302);
         }
 
-        console.log('[PayPalReturnHandler] Calling Sticky.io order_view for key:', kvKey, { stickyOrderId: state.stickyOrderId_initial });
-        let orderViewResponse = await callStickyOrderView(stickyBaseUrl, [state.stickyOrderId_initial!], env); // Changed const to let
+        console.log('[PayPalReturnHandler] Calling Sticky.io order_view for key:', kvKey, { stickyOrderId: orderIdForVerification });
+        let orderViewResponse = await callStickyOrderView(stickyBaseUrl, [orderIdForVerification], env);
 
         let isOrderSuccessful = false;
         let actualStickyOrderStatus: string | undefined = undefined;
@@ -228,9 +237,54 @@ export async function handlePaypalReturn(request: Request, env: Env, ctx: Execut
             const redirectUrl = new URL(frontendBaseUrl); // Use the frontend's base URL from state
             redirectUrl.pathname = '/upsell1'; // Path on the frontend
             redirectUrl.searchParams.set('internal_txn_id', internal_txn_id);
+            // internal_txn_id is already set prior to this block
+            // orderId (from initial order)
             if (finalState.stickyOrderId_initial) {
                 redirectUrl.searchParams.set('orderId', finalState.stickyOrderId_initial);
             }
+
+            // gatewayId
+            if (finalState.gatewayId) {
+                redirectUrl.searchParams.set('gatewayId', String(finalState.gatewayId));
+            }
+
+            // Check if orderViewResponse exists before trying to access its properties
+            if (orderViewResponse) {
+                // shippingId
+                if (orderViewResponse.shipping_id) {
+                    redirectUrl.searchParams.set('shippingId', String(orderViewResponse.shipping_id));
+                }
+
+                // ipAddress
+                if (orderViewResponse.ip_address) {
+                    redirectUrl.searchParams.set('ipAddress', orderViewResponse.ip_address);
+                }
+
+                // campaignId (from the initial order)
+                if (orderViewResponse.campaign_id) {
+                    redirectUrl.searchParams.set('campaignId', String(orderViewResponse.campaign_id));
+                }
+
+                // shippingCountry (for frontend's shippingInfo.country)
+                if (orderViewResponse.shipping_country) {
+                    redirectUrl.searchParams.set('shippingCountry', orderViewResponse.shipping_country);
+                }
+
+                // Tracking parameters
+                if (orderViewResponse.afid) {
+                     redirectUrl.searchParams.set('AFID', orderViewResponse.afid);
+                } else if (orderViewResponse.affiliate) { // Fallback for AFID
+                    redirectUrl.searchParams.set('AFID', orderViewResponse.affiliate);
+                }
+                if (orderViewResponse.sid) redirectUrl.searchParams.set('SID', orderViewResponse.sid);
+                if (orderViewResponse.affid) redirectUrl.searchParams.set('AFFID', orderViewResponse.affid); // Specific 'affid'
+                if (orderViewResponse.c1) redirectUrl.searchParams.set('C1', orderViewResponse.c1);
+                if (orderViewResponse.c2) redirectUrl.searchParams.set('C2', orderViewResponse.c2);
+                if (orderViewResponse.c3) redirectUrl.searchParams.set('C3', orderViewResponse.c3);
+                if (orderViewResponse.click_id) redirectUrl.searchParams.set('click_id', orderViewResponse.click_id);
+            }
+            
+            // sticky_url_id (persisted from original request)
             if (stickyUrlIdFromParam) {
                 redirectUrl.searchParams.set('sticky_url_id', stickyUrlIdFromParam);
             }

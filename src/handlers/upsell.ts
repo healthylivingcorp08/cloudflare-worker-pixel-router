@@ -30,7 +30,7 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
         }
 
         const state: PixelState = JSON.parse(stateString);
-        console.log(`[UpsellHandler] Found PixelState for ${kvKey}:`, { paymentMethod_initial: state.paymentMethod_initial, paypalTransactionId: state.paypalTransactionId, stickyOrderId_initial: state.stickyOrderId_initial, currentStickyOrderId: state.stickyOrderId });
+        console.log(`[UpsellHandler] Found PixelState for ${kvKey}:`, { paymentMethod_initial: state.paymentMethod_initial, paypalTransactionId: state.paypalTransactionId, paypalPayerId: state.paypalPayerId, stickyOrderId_initial: state.stickyOrderId_initial, currentStickyOrderId: state.stickyOrderId, customerFirstName: state.customerFirstName });
 
         const upsellData = await request.json() as UpsellRequest;
 
@@ -70,12 +70,11 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
                 console.error(`[UpsellHandler] Missing paypalTransactionId (EC Token) for PayPal upsell. ${kvKey}`);
                 return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Missing PayPal token for upsell.' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=UTF-8' } }), request);
             }
-             if (!state.paypalPayerId) {
-                console.error(`[UpsellHandler] Missing paypalPayerId for PayPal upsell. ${kvKey}`);
-                // Note: Depending on Sticky.io's specific PayPal integration for new_upsell, PayerID might be optional if token is enough.
-                // However, it's generally good practice to have it.
-                // For now, we'll proceed but log a warning. If it becomes mandatory, this should be an error.
-                console.warn(`[UpsellHandler] paypalPayerId is missing for ${kvKey}. Proceeding, but this might be an issue.`);
+            // Removed critical error for missing paypalPayerId.
+            // It will be conditionally added to the payload.
+            // If Sticky.io requires it, their API will return an error.
+            if (!state.paypalPayerId) {
+                console.warn(`[UpsellHandler] paypalPayerId is missing for PayPal upsell. Proceeding without it. ${kvKey}`);
             }
 
             let previousPaypalOrderId: string | undefined | null;
@@ -106,7 +105,8 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
                 // PayPal specific fields for new_upsell
                 creditCardType: 'paypal',
                 paypal_token: state.paypalTransactionId, // EC Token
-                paypal_payer_id: state.paypalPayerId, // PayerID
+                // Conditionally add paypal_payer_id only if it exists
+                ...(state.paypalPayerId && { paypal_payer_id: state.paypalPayerId }),
                 gatewayId: state.gatewayId, // Gateway ID from the initial transaction
 
                 // Customer details from state (populated by paypalReturn.ts)
@@ -161,15 +161,15 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
                 // Store the upsell order ID based on step
                 if (upsellData.step === 1) {
                     updatedState.stickyOrderId_Upsell1 = newUpsellOrderId;
-                    updatedState.processed_Upsell_1 = true;
+                    // processed_Upsell_1 will be set by triggerUpsellActions
                     updatedState.timestamp_processed_Upsell_1 = new Date().toISOString();
                 } else if (upsellData.step === 2) {
                     updatedState.stickyOrderId_Upsell2 = newUpsellOrderId;
-                    updatedState.processed_Upsell_2 = true;
+                    // processed_Upsell_2 will be set by triggerUpsellActions
                     updatedState.timestamp_processed_Upsell_2 = new Date().toISOString();
                 } else if (upsellData.step === 3) { // Added step 3 handling
                     updatedState.stickyOrderId_Upsell3 = newUpsellOrderId;
-                    updatedState.processed_Upsell_3 = true;
+                    // processed_Upsell_3 will be set by triggerUpsellActions
                     updatedState.timestamp_processed_Upsell_3 = new Date().toISOString();
                 }
                 // Add more steps if necessary, ensuring PixelState in types.ts supports them or uses [key:string]:any
@@ -263,15 +263,15 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
             // Store the upsell order ID and processing flags based on step for card flow
             if (upsellData.step === 1) {
                 updatedState.stickyOrderId_Upsell1 = result.order_id;
-                updatedState.processed_Upsell_1 = true;
+                // processed_Upsell_1 will be set by triggerUpsellActions
                 updatedState.timestamp_processed_Upsell_1 = new Date().toISOString();
             } else if (upsellData.step === 2) {
                 updatedState.stickyOrderId_Upsell2 = result.order_id;
-                updatedState.processed_Upsell_2 = true;
+                // processed_Upsell_2 will be set by triggerUpsellActions
                 updatedState.timestamp_processed_Upsell_2 = new Date().toISOString();
             } else if (upsellData.step === 3) {
                 updatedState.stickyOrderId_Upsell3 = result.order_id;
-                updatedState.processed_Upsell_3 = true;
+                // processed_Upsell_3 will be set by triggerUpsellActions
                 updatedState.timestamp_processed_Upsell_3 = new Date().toISOString();
             }
             // Add more steps if necessary
