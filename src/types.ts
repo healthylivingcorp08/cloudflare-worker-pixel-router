@@ -1,4 +1,4 @@
-import type { KVNamespace, DurableObjectNamespace, Request as CfRequest } from '@cloudflare/workers-types';
+import type { KVNamespace, DurableObjectNamespace, Request as CfRequest, RateLimit } from '@cloudflare/workers-types';
 
 export interface Env {
     // KV Namespaces
@@ -18,6 +18,7 @@ export interface Env {
     // Bindings for other services (e.g., Queues, D1)
     // MY_QUEUE: Queue;
     // MY_D1_DB: D1Database;
+    API_RATE_LIMITER: RateLimit; // Added for Worker Rate Limiting
 
     // Variables for testing/local development
     IS_LOCAL?: boolean | string; // Flag for local development specific logic
@@ -39,6 +40,7 @@ export interface PixelState {
     timestamp_created: string; // ISO 8601 timestamp
     timestamp_last_updated: string; // ISO 8601 timestamp
     siteId?: string; // Identifier for the site/funnel this transaction belongs to
+initialUrl?: string; // Full URL of the page where the transaction journey started (e.g., from Referer)
     siteBaseUrl?: string; // Base URL of the site, e.g., https://www.example.com
 
     // Customer details (populated from initial checkout)

@@ -81,9 +81,11 @@ export async function handleDecideCampaign(request: Request, env: Env, ctx: Exec
     console.log(`[DecideCampaignHandler] Target Campaign ID: ${targetCampaignId}`);
 
     // 5. Construct initial KV state
+    const requestReferer = request.headers.get('Referer'); // Get Referer for initialUrl
     const initialState: PixelState = {
       internal_txn_id: internal_txn_id,
       siteId: siteId, // Add siteId to the state
+      initialUrl: requestReferer || undefined, // Store the initial URL
       timestamp_created: new Date().toISOString(),
       timestamp_last_updated: new Date().toISOString(),
       status: 'pending',
@@ -110,15 +112,15 @@ export async function handleDecideCampaign(request: Request, env: Env, ctx: Exec
       },
       processed_Initial: false,
       // Initialize other fields
-      stickyOrderId_Initial: null,
-      paymentMethod_Initial: null,
-      timestamp_processed_Initial: null,
+      stickyOrderId_initial: undefined, // Changed from null
+      paymentMethod_initial: undefined, // Changed from null
+      timestamp_processed_Initial: undefined, // Changed from null
       // Add upsell fields initialized
-      stickyOrderId_Upsell1: null,
-      stickyOrderId_Upsell2: null,
+      stickyOrderId_Upsell1: undefined, // Changed from null
+      stickyOrderId_Upsell2: undefined, // Changed from null
       processed_Upsell_1: false,
       processed_Upsell_2: false,
-      timestamp_processed_Upsell_1: null,
+      timestamp_processed_Upsell_1: undefined, // Changed from null
     };
 
     // 6. Write state to PIXEL_STATE KV with TTL (e.g., 24 hours = 86400 seconds)
