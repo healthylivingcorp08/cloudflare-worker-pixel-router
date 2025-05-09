@@ -50,6 +50,8 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
         const ipAddress = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
         const userAgent = request.headers.get('User-Agent') || '';
 
+const originalUrl = new URL(request.url); // Worker's full request URL
+        const workerOrigin = originalUrl.origin; // Worker's origin, e.g., http://127.0.0.1:8787
         if (!internal_txn_id || !targetCampaignId) {
             const missing = [!internal_txn_id && 'internal_txn_id', !targetCampaignId && 'targetCampaignId'].filter(Boolean).join(', ');
             return addCorsHeaders(new Response(JSON.stringify({ success: false, message: `Missing required fields: ${missing}` }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
@@ -135,6 +137,24 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
         }
 
         let finalEffectiveSiteBaseUrl: string | undefined; // Variable to store the determined site base URL
+// Determine finalEffectiveSiteBaseUrl (this is for state.siteBaseUrl, MUST be frontend URL)
+        const siteUrlFromPayload = checkoutPayload.siteBaseUrl; // from request body (line 48)
+        const requestOrigin = request.headers.get('Origin');
+        const requestReferer = request.headers.get('Referer'); // Get Referer
+
+        if (siteUrlFromPayload && typeof siteUrlFromPayload === 'string' && siteUrlFromPayload.startsWith('http')) {
+            finalEffectiveSiteBaseUrl = siteUrlFromPayload;
+            console.log(`[CheckoutHandler] Using siteBaseUrl from payload for state.siteBaseUrl: ${finalEffectiveSiteBaseUrl}`);
+        } else if (requestReferer && typeof requestReferer === 'string' && requestReferer.startsWith('http')) { // Check Referer next
+            finalEffectiveSiteBaseUrl = requestReferer;
+            console.log(`[CheckoutHandler] Using Referer header for state.siteBaseUrl: ${finalEffectiveSiteBaseUrl}. Payload siteBaseUrl was: '${siteUrlFromPayload}'`);
+        } else if (requestOrigin && requestOrigin !== workerOrigin && typeof requestOrigin === 'string' && requestOrigin.startsWith('http')) {
+            finalEffectiveSiteBaseUrl = requestOrigin;
+            console.log(`[CheckoutHandler] Using Origin header for state.siteBaseUrl: ${finalEffectiveSiteBaseUrl}. Payload siteBaseUrl was: '${siteUrlFromPayload}', Referer was: '${requestReferer}'`);
+        } else {
+            // finalEffectiveSiteBaseUrl remains undefined if neither payload nor suitable Origin header provides a frontend URL.
+            console.warn(`[CheckoutHandler] Could not determine a valid frontend site base URL from payload ('${siteUrlFromPayload}'), Referer ('${requestReferer}'), or Origin header ('${requestOrigin}'). state.siteBaseUrl will be undefined. This is critical for PayPal return.`);
+        }
 
         // 4. Construct Sticky.io Payload
         // Use Record<string, any> for flexibility, especially with spread syntax later
@@ -214,30 +234,9 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             ...(paymentFieldsForSticky), // Spread payment fields (card or paypal)
             // Add alt_pay_return_url specifically for PayPal, pointing to the upsell page
             ...(determinedPaymentMethod === 'paypal' ? (() => {
-                const originalUrl = new URL(request.url); // Worker's full request URL
-                const workerOrigin = originalUrl.origin; // Worker's origin, e.g., http://127.0.0.1:8787
-                
-                // Determine finalEffectiveSiteBaseUrl (this is for state.siteBaseUrl, MUST be frontend URL)
-                // finalEffectiveSiteBaseUrl is declared at line 137 with wider scope.
-                const siteUrlFromPayload = checkoutPayload.siteBaseUrl; // from request body (line 48)
-                const requestOrigin = request.headers.get('Origin');
-                const requestReferer = request.headers.get('Referer'); // Get Referer
-
-                if (siteUrlFromPayload && typeof siteUrlFromPayload === 'string' && siteUrlFromPayload.startsWith('http')) {
-                    finalEffectiveSiteBaseUrl = siteUrlFromPayload;
-                    console.log(`[CheckoutHandler] Using siteBaseUrl from payload for state.siteBaseUrl: ${finalEffectiveSiteBaseUrl}`);
-                } else if (requestReferer && typeof requestReferer === 'string' && requestReferer.startsWith('http')) { // Check Referer next
-                    finalEffectiveSiteBaseUrl = requestReferer;
-                    console.log(`[CheckoutHandler] Using Referer header for state.siteBaseUrl: ${finalEffectiveSiteBaseUrl}. Payload siteBaseUrl was: '${siteUrlFromPayload}'`);
-                } else if (requestOrigin && requestOrigin !== workerOrigin && typeof requestOrigin === 'string' && requestOrigin.startsWith('http')) {
-                    finalEffectiveSiteBaseUrl = requestOrigin;
-                    console.log(`[CheckoutHandler] Using Origin header for state.siteBaseUrl: ${finalEffectiveSiteBaseUrl}. Payload siteBaseUrl was: '${siteUrlFromPayload}', Referer was: '${requestReferer}'`);
-                } else {
-                    // finalEffectiveSiteBaseUrl remains undefined if neither payload nor suitable Origin header provides a frontend URL.
-                    console.warn(`[CheckoutHandler] Could not determine a valid frontend site base URL from payload ('${siteUrlFromPayload}'), Referer ('${requestReferer}'), or Origin header ('${requestOrigin}'). state.siteBaseUrl will be undefined. This is critical for PayPal return.`);
-                }
-                
                 // For constructing alt_pay_return_url (which points to the WORKER):
+                // finalEffectiveSiteBaseUrl is now determined earlier.
+                // workerOrigin is now defined globally within the function.
                 const workerApiBase = env.WORKER_BASE_URL || workerOrigin; // This is correct for alt_pay_return_url's base
 
                 const returnUrlParams = new URLSearchParams();
