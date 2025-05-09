@@ -258,7 +258,7 @@ const originalUrl = new URL(request.url); // Worker's full request URL
 if (state) {
             const sourceUrl = state.initialUrl || state.siteBaseUrl; // Prioritize initialUrl
             if (sourceUrl) {
-                payloadToSend.website = `Initial order from ${sourceUrl}`;
+                payloadToSend.website = `${sourceUrl}`;
             } else {
                 payloadToSend.website = `Initial order (source URL not captured in state)`;
             }
