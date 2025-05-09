@@ -228,7 +228,8 @@ const originalUrl = new URL(request.url); // Worker's full request URL
             utm_content: state.trackingParams?.utmContent,
             utm_term: state.trackingParams?.utmTerm,
 
-            preserve_force_gateway: "1", // Renamed parameter
+            // preserve_force_gateway: "1", // Renamed parameter
+            // preserve_billing: "1",
  
             // Add payment fields directly to the payload if it's a card payment
             ...(paymentFieldsForSticky), // Spread payment fields (card or paypal)
@@ -258,7 +259,7 @@ const originalUrl = new URL(request.url); // Worker's full request URL
 if (state) {
             const sourceUrl = state.initialUrl || state.siteBaseUrl; // Prioritize initialUrl
             if (sourceUrl) {
-                payloadToSend.website = `Initial order from ${sourceUrl}`;
+                payloadToSend.website = `${sourceUrl}`;
             } else {
                 payloadToSend.website = `Initial order (source URL not captured in state)`;
             }

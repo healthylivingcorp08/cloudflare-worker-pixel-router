@@ -81,9 +81,9 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
             if (upsellData.step === 1) {
                 previousPaypalOrderId = state.stickyOrderId_initial;
             } else if (upsellData.step === 2) {
-                previousPaypalOrderId = state.stickyOrderId_Upsell1;
+                previousPaypalOrderId = state.stickyOrderId_initial;
             } else if (upsellData.step === 3) {
-                previousPaypalOrderId = state.stickyOrderId_Upsell2;
+                previousPaypalOrderId = state.stickyOrderId_initial;
             } else {
                 // Should not happen if steps are 1, 2, or 3
                 console.error(`[UpsellHandler] Invalid upsell step (${upsellData.step}) for determining PayPal previousOrderId for ${kvKey}`);
@@ -136,7 +136,7 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
                 // Optional fields from user's sample new_upsell request, if needed
                 // notes: "PayPal upsell via server_cloudflare_tech",
                 // AFID: state.affid, // If you store these in state
-                website: state.initialUrl ? `PayPal Upsell on ${state.initialUrl}` : (state.siteBaseUrl ? `PayPal Upsell on ${state.siteBaseUrl}` : `PayPal Upsell (source URL not available)`),
+                website: state.initialUrl ? `${state.initialUrl}` : (state.siteBaseUrl ? `${state.siteBaseUrl}` : `PayPal Upsell (source URL not available)`),
             };
             
             // Remove undefined fields from payload to keep it clean
@@ -221,7 +221,7 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
             // Card Upsell Flow
             console.log(`[UpsellHandler] Processing Card upsell for ${kvKey}`);
             // For card upsells, we need the previous order ID (initial or from a prior upsell)
-            const previousOrderIdForUpsell = state.stickyOrderId || state.stickyOrderId_initial;
+            const previousOrderIdForUpsell = state.stickyOrderId_initial ||  state.stickyOrderId;
             if (!previousOrderIdForUpsell) {
                 console.error(`[UpsellHandler] Missing previous order ID for card upsell. ${kvKey}`);
                 return addCorsHeaders(new Response(JSON.stringify({
