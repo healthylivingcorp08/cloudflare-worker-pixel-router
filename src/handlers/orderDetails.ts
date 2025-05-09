@@ -2,7 +2,7 @@ import { Env, ExtendedOrderConfirmation, Product, Address } from '../types'; // 
 import { ExecutionContext } from '@cloudflare/workers-types';
 import { addCorsHeaders } from '../middleware/cors';
 import { callStickyOrderView } from '../lib/sticky'; // Import the Sticky.io library function
-import { STICKY_URL_MAP } from '../config'; // Import the URL map
+import { STICKY_CONFIG_MAP } from '../config'; // Import the URL map
 
 /**
  * Handles POST requests to /api/order-details.
@@ -25,7 +25,7 @@ export async function handleOrderDetails(request: Request, env: Env, ctx: Execut
     // --- 0. Determine Sticky.io Base URL ---
     // TODO: Ideally, determine the identifier dynamically based on hostname/siteId if needed
     const stickyUrlIdentifier = '1'; // Assuming '1' for drivebright based on frontend constants
-    const stickyBaseUrl = STICKY_URL_MAP[stickyUrlIdentifier];
+    const stickyBaseUrl = STICKY_CONFIG_MAP[stickyUrlIdentifier]?.url;
 
     if (!stickyBaseUrl) {
         console.error(`[OrderDetailsHandler] Sticky.io base URL not found in STICKY_URL_MAP for identifier: ${stickyUrlIdentifier}`);

@@ -1,5 +1,5 @@
 import { Env, PixelState, UpsellRequest, StickyPayload } from '../types';
-import { STICKY_URL_MAP } from '../config'; // Added import
+import { STICKY_CONFIG_MAP } from '../config'; // Added import
 import { ExecutionContext } from '@cloudflare/workers-types';
 import { callStickyUpsell, callStickyNewOrder } from '../lib/sticky';
 import { addCorsHeaders } from '../middleware/cors';
@@ -49,7 +49,7 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
             return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Missing Sticky URL identifier.' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=UTF-8' } }), request);
         }
 
-        const stickyBaseUrl = STICKY_URL_MAP[stickyUrlId];
+        const stickyBaseUrl = STICKY_CONFIG_MAP[stickyUrlId].url;
         if (!stickyBaseUrl) {
             console.error(`[UpsellHandler] Invalid or missing Sticky Base URL for ID: ${stickyUrlId} (key: ${kvKey})`);
             return addCorsHeaders(new Response(JSON.stringify({ success: false, message: `Invalid Sticky URL identifier: ${stickyUrlId}` }), { status: 400, headers: { 'Content-Type': 'application/json;charset=UTF-8' } }), request);

@@ -1,16 +1,30 @@
 import { Env } from '../types'; // Assuming types are in ../types
+import { STICKY_CONFIG_MAP } from '../config';
 
 /**
  * Generic helper function to call Sticky.io API endpoints.
  * Handles authentication, request construction, basic response parsing, and timeout.
  */
 async function callStickyApi(baseUrl: string, endpoint: string, payload: any, env: Env, method: string = 'POST', timeoutMs: number = 10000): Promise<any> { // Added baseUrl parameter, timeout parameter
-    const stickyApiUser = env.STICKY_USERNAME;
-    const stickyApiPass = env.STICKY_PASSWORD;
+    const stickyConfigEntry = Object.values(STICKY_CONFIG_MAP).find(config => config.url === baseUrl);
 
-    if (!stickyApiUser || !stickyApiPass) {
-        console.error('[StickyLib] Sticky.io credentials missing in environment secrets.');
-        throw new Error('Sticky.io API credentials missing');
+    if (!stickyConfigEntry) {
+        console.error(`[StickyLib] No Sticky.io configuration found for baseUrl: ${baseUrl}`);
+        throw new Error(`Sticky.io API configuration not found for URL: ${baseUrl}`);
+    }
+
+    // Retrieve the username from env using the secret name stored in the map
+    const stickyApiUser = env[stickyConfigEntry.username_secret_name] as string | undefined;
+    // Retrieve the password from env using the secret name stored in the map
+    const stickyApiPass = env[stickyConfigEntry.password_secret_name] as string | undefined;
+
+    if (!stickyApiUser) {
+        console.error(`[StickyLib] Sticky.io username not found in environment using secret name '${stickyConfigEntry.username_secret_name}' for ${baseUrl}.`);
+        throw new Error(`Sticky.io API username missing or not found in environment (expected secret: ${stickyConfigEntry.username_secret_name})`);
+    }
+    if (!stickyApiPass) {
+        console.error(`[StickyLib] Sticky.io password not found in environment using secret name '${stickyConfigEntry.password_secret_name}' for ${baseUrl}.`);
+        throw new Error(`Sticky.io API password missing or not found in environment (expected secret: ${stickyConfigEntry.password_secret_name})`);
     }
     if (!baseUrl) {
         console.error('[StickyLib] Sticky.io base URL missing.');

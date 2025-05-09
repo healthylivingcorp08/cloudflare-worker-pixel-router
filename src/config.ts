@@ -2,7 +2,7 @@ import { SiteConfig, Env, PageConfig, PixelConfig, ApiEndpointConfig } from './t
 import { getCache, setCache } from './utils/cache';
 
 /**
- * Map of hostnames to site IDs
+ * Map of hostnames to site IDs, i don't think i use this anymore might delete 
  */
 const HOST_TO_SITE_MAP: { [hostname: string]: string } = {
   'getamplihear.com': 'siteA',
@@ -13,10 +13,32 @@ const HOST_TO_SITE_MAP: { [hostname: string]: string } = {
 /**
  * Map of Sticky.io URL identifiers to base URLs
  */
-export const STICKY_URL_MAP: Record<string, string> = {
-  '1': 'https://techcommerceunlimited.sticky.io/api/v1', // drivebright
-  '2': 'URL_FOR_CODE_CLOUDS_PLACEHOLDER', // TODO: Replace with actual URL
-  '3': 'URL_FOR_X_PLACEHOLDER',         // TODO: Replace with actual URL
+interface StickyInstanceConfig {
+  url: string;
+  username_secret_name: string; // Name of the env variable for the username
+  password_secret_name: string; // Name of the env variable for the password
+}
+
+export const STICKY_CONFIG_MAP: Record<string, StickyInstanceConfig> = {
+  '1': {
+    url: 'https://techcommerceunlimited.sticky.io/api/v1',
+    // This should be the NAME of the variable in .dev.vars (or Cloudflare secret) that holds the USERNAME
+    // e.g., if .dev.vars has DRIVEBRIGHT_USER="actual_user", then this should be 'DRIVEBRIGHT_USER'
+    username_secret_name: 'STICKY_USERNAME', // Assuming 'STICKY_USERNAME' is the var name in your .dev.vars
+    // This should be the NAME of the variable in .dev.vars (or Cloudflare secret) that holds the PASSWORD
+    // e.g., if .dev.vars has DRIVEBRIGHT_PASS="actual_pass", then this should be 'DRIVEBRIGHT_PASS'
+    password_secret_name: 'STICKY_PASSWORD'  // Assuming 'STICKY_PASSWORD' is the var name in your .dev.vars
+  }, // drivebright
+  '2': {
+    url: 'URL_FOR_CODE_CLOUDS_PLACEHOLDER',
+    username_secret_name: 'CODE_CLOUDS_USERNAME_ENV_VAR_NAME', // Replace with actual env var name
+    password_secret_name: 'CODE_CLOUDS_PASSWORD_ENV_VAR_NAME'  // Replace with actual env var name
+  }, // TODO: Replace
+  '3': {
+    url: 'URL_FOR_X_PLACEHOLDER',
+    username_secret_name: 'X_USERNAME_ENV_VAR_NAME', // Replace with actual env var name
+    password_secret_name: 'X_PASSWORD_ENV_VAR_NAME'  // Replace with actual env var name
+  }, // TODO: Replace
 };
 
 /**
@@ -86,7 +108,7 @@ function getSiteIdFromHostname(hostname: string): string {
  * @param siteId The site identifier (e.g., 'drivebright')
  * @param env Cloudflare Worker environment
  */
-async function loadSiteConfig(siteId: string, env: Env): Promise<SiteConfig> {
+export async function loadSiteConfig(siteId: string, env: Env): Promise<SiteConfig> {
   const cacheKey = `siteConfig_${siteId}`;
   const cachedConfig = getCache<SiteConfig>(cacheKey);
 

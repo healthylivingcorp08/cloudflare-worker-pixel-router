@@ -22,6 +22,34 @@ export interface Env {
 
     // Variables for testing/local development
     IS_LOCAL?: boolean | string; // Flag for local development specific logic
+    [key: string]: any; // Allows for dynamic access to other env vars/secrets
+}
+export interface PixelConfig {
+  type: string;
+  config: object; // Define more specifically if known
+}
+
+export interface ApiEndpointConfig {
+  type: string;
+  endpoint: string;
+  method: string; // e.g., 'GET', 'POST'
+  config: object; // Define more specifically if known, e.g., headers, body schema
+}
+
+export interface PageConfig {
+  pixels: PixelConfig[];
+  apiEndpoints: ApiEndpointConfig[];
+  // Add other page-specific configurations if needed
+}
+
+export interface SiteConfig {
+  siteId: string;
+  domain: string; // The primary domain for the site
+  pages: {
+    [pageName: string]: PageConfig; // e.g., 'checkout', 'upsell1', 'thankyou'
+  };
+  // scrubPercent?: number; // This was commented out in config.ts, decide if needed
+  // Add other site-wide configurations
 }
 
 export interface CustomerAddress {
@@ -285,6 +313,38 @@ export interface OrderDetailsResponse {
         gatewayId?: string | number;
         // Add more fields as returned by Sticky.io order_view and processed by your handler
     };
+}
+export interface Product {
+  product_name: string;
+  quantity: number;
+  unitPrice: number;
+  priceRate?: number;
+  discountPrice?: number;
+  regPrice?: number;
+  shipPrice?: number;
+  product_id?: string | number;
+}
+
+export interface Address {
+  address1: string;
+  address2?: string;
+  city: string;
+  state: string;
+  country: string;
+  zip: string;
+}
+
+export interface ExtendedOrderConfirmation {
+  orderId: string;
+  orderNumbers: string; // Could be a single string or comma-separated if multiple
+  customerEmail?: string;
+  products: Product[];
+  shippingFee: number;
+  billingAddress: Address;
+  shippingAddress: Address;
+  creditCardType?: string; // e.g., "Visa", "Mastercard"
+  totalValue: number;
+  // Add any other fields you expect on the final order confirmation object
 }
 
 // For Cloudflare Request object augmentation if needed

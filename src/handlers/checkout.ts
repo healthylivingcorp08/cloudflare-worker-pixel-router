@@ -1,4 +1,4 @@
-import { STICKY_URL_MAP } from '../config'; // Added import
+import { STICKY_CONFIG_MAP } from '../config'; // Added import
 import { Env, PixelState, PaymentData, StickyPayload } from '../types'; // Removed EncryptedData
 import { ExecutionContext } from '@cloudflare/workers-types';
 import { addCorsHeaders } from '../middleware/cors';
@@ -35,7 +35,7 @@ export async function handleCheckout(request: Request, env: Env, ctx: ExecutionC
             return addCorsHeaders(new Response(JSON.stringify({ success: false, message: 'Missing Sticky URL identifier header.' }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);
         }
 
-        const stickyBaseUrl = STICKY_URL_MAP[stickyUrlId]; // Get the URL string directly
+        const stickyBaseUrl = STICKY_CONFIG_MAP[stickyUrlId].url; // Get the URL string directly
         if (!stickyBaseUrl) { // Check if the lookup was successful
             console.error(`[CheckoutHandler] Invalid or missing Sticky Base URL for ID: ${stickyUrlId}`);
             return addCorsHeaders(new Response(JSON.stringify({ success: false, message: `Invalid Sticky URL identifier: ${stickyUrlId}` }), { status: 400, headers: { 'Content-Type': 'application/json' } }), request);

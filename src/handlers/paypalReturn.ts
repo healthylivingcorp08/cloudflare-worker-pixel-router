@@ -3,7 +3,7 @@ import { ExecutionContext } from '@cloudflare/workers-types';
 // import { logError, logInfo } from '../logger'; // Assuming logger exists - Replaced with console
 import { triggerInitialActions } from '../actions'; // Will be needed later
 import { callStickyOrderView } from '../lib/sticky'; // Corrected import name
-import { STICKY_URL_MAP } from '../config'; // For STICKY_API_URL selection
+import { STICKY_CONFIG_MAP } from '../config'; // For STICKY_API_URL selection
 
 /**
  * Handles the return from PayPal after a checkout attempt.
@@ -22,7 +22,7 @@ export async function handlePaypalReturn(request: Request, env: Env, ctx: Execut
     }
 
     // Determine Sticky API URL
-    const stickyBaseUrl = stickyUrlIdFromParam ? STICKY_URL_MAP[stickyUrlIdFromParam] : env.STICKY_API_URL;
+    const stickyBaseUrl = stickyUrlIdFromParam ? STICKY_CONFIG_MAP[stickyUrlIdFromParam].url : env.STICKY_API_URL;
     if (!stickyBaseUrl) {
         console.error(`[PayPalReturnHandler] Sticky Base URL not found for ID: ${stickyUrlIdFromParam} or default. internal_txn_id: ${internal_txn_id}`);
         return Response.redirect(url.origin + `/checkout?error=paypal_config_error&internal_txn_id=${internal_txn_id}`, 302);
