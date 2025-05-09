@@ -4,6 +4,7 @@ import { ExecutionContext } from '@cloudflare/workers-types';
 import { callStickyUpsell, callStickyNewOrder } from '../lib/sticky';
 import { addCorsHeaders } from '../middleware/cors';
 import { triggerUpsellActions } from '../actions';
+import { getQueryParam } from '../utils/request';
 
 export async function handleUpsell(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     let internal_txn_id: string | null = null; // Initialize for broader scope in error handling
@@ -33,6 +34,9 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
         console.log(`[UpsellHandler] Found PixelState for ${kvKey}:`, { paymentMethod_initial: state.paymentMethod_initial, paypalTransactionId: state.paypalTransactionId, paypalPayerId: state.paypalPayerId, stickyOrderId_initial: state.stickyOrderId_initial, currentStickyOrderId: state.stickyOrderId, customerFirstName: state.customerFirstName });
 
         const upsellData = await request.json() as UpsellRequest;
+
+        const url = new URL(request.url);
+        const forceGatewayIdFromUrl = getQueryParam(request, 'forceGatewayId');
 
         // --- Sticky URL ID Handling ---
         // sticky_url_id from UpsellRequest (body) is now optional in types.ts
@@ -107,7 +111,8 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
                 paypal_token: state.paypalTransactionId, // EC Token
                 // Conditionally add paypal_payer_id only if it exists
                 ...(state.paypalPayerId && { paypal_payer_id: state.paypalPayerId }),
-                gatewayId: state.gatewayId, // Gateway ID from the initial transaction
+                gatewayId: forceGatewayIdFromUrl || state.gatewayId, // Use URL param if present // Original line
+                preserve_gateway: "1", // Always set to "1" // Original line
 
                 // Customer details from state (populated by paypalReturn.ts)
                 firstName: state.customerFirstName,
@@ -138,6 +143,16 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
                 // AFID: state.affid, // If you store these in state
                 website: state.initialUrl ? `${state.initialUrl}` : (state.siteBaseUrl ? `${state.siteBaseUrl}` : `PayPal Upsell (source URL not available)`),
             };
+            
+            // Debugging gatewayId selection
+            console.log(`[UpsellHandler] forceGatewayIdFromUrl for ${kvKey}:`, forceGatewayIdFromUrl);
+            console.log(`[UpsellHandler] state.gatewayId for ${kvKey}:`, state.gatewayId);
+
+            // Assign gatewayId and preserve_gateway to the payload
+            paypalUpsellPayload.forceGatewayId = forceGatewayIdFromUrl || state.gatewayId;
+            paypalUpsellPayload.preserve_force_gateway = "1";
+
+            console.log(`[UpsellHandler] Final paypalUpsellPayload.gatewayId for ${kvKey}:`, paypalUpsellPayload.gatewayId);
             
             // Remove undefined fields from payload to keep it clean
             Object.keys(paypalUpsellPayload).forEach(key => paypalUpsellPayload[key] === undefined && delete paypalUpsellPayload[key]);
@@ -231,16 +246,27 @@ export async function handleUpsell(request: Request, env: Env, ctx: ExecutionCon
                 }), { status: 400, headers: { 'Content-Type': 'application/json;charset=UTF-8' } }), request);
             }
 
-            const cardUpsellPayload = {
+            const cardUpsellPayload: any = { // Add :any type here
                 previousOrderId: previousOrderIdForUpsell,
                 campaignId: upsellData.campaignId,
                 offers: upsellData.offers,
                 shippingId: upsellData.shippingId,
                 ipAddress: request.headers.get('CF-Connecting-IP') || '127.0.0.1',
-                gatewayId: upsellData.forceGatewayId || state.gatewayId,
-                preserve_gateway: upsellData.preserve_gateway || "1",
+                // gatewayId: upsellData.forceGatewayId || state.gatewayId, // Original line
+                // preserve_gateway: upsellData.preserve_gateway || "1", // Original line
 website: state.initialUrl ? `Card Upsell on ${state.initialUrl}` : (state.siteBaseUrl ? `Card Upsell on ${state.siteBaseUrl}` : `Card Upsell (source URL not available)`),
             };
+
+            // Debugging gatewayId selection for card upsell
+            console.log(`[UpsellHandler] Card Upsell - upsellData.forceGatewayId for ${kvKey}:`, upsellData.forceGatewayId);
+            console.log(`[UpsellHandler] Card Upsell - state.gatewayId for ${kvKey}:`, state.gatewayId);
+
+            cardUpsellPayload.forceGatewayId = upsellData.forceGatewayId || state.gatewayId;
+            cardUpsellPayload.preserve_force_gateway = upsellData.preserve_gateway || "1"; // Assuming this logic is still desired for card
+
+            console.log(`[UpsellHandler] Card Upsell - Final cardUpsellPayload.gatewayId for ${kvKey}:`, cardUpsellPayload.gatewayId);
+            console.log(`[UpsellHandler] Card Upsell - Final cardUpsellPayload.preserve_gateway for ${kvKey}:`, cardUpsellPayload.preserve_gateway);
+
             console.log(`[UpsellHandler] Card new_upsell payload for ${kvKey}:`, cardUpsellPayload);
             const result: StickyPayload = await callStickyUpsell(stickyBaseUrl, cardUpsellPayload, env);
             console.log(`[UpsellHandler] Card new_upsell result for ${kvKey}:`, result);

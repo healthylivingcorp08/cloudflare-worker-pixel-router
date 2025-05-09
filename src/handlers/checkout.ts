@@ -260,11 +260,14 @@ if (state) {
             const sourceUrl = state.initialUrl || state.siteBaseUrl; // Prioritize initialUrl
             if (sourceUrl) {
                 payloadToSend.website = `${sourceUrl}`;
+                payloadToSend.notes = `${sourceUrl}`; // Add notes field
             } else {
                 payloadToSend.website = `Initial order (source URL not captured in state)`;
+                payloadToSend.notes = `Initial order (source URL not captured in state)`; // Add notes field
             }
         } else {
             payloadToSend.website = `Initial order (state not available to determine source URL)`;
+            payloadToSend.notes = `Initial order (state not available to determine source URL)`; // Add notes field
         }
         Object.keys(payloadToSend).forEach((key: string) => {
             // Remove undefined and null values, as Sticky might not like them
